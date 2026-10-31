@@ -36,13 +36,13 @@ The colours come from the desktop theme file `~/.local/state/fuck-omarchy/curren
 sudo pacman -S --needed python sqlite uv xdg-utils noto-fonts-cjk fontconfig libnotify
 uv tool install --prerelease=allow 'datasette==1.0a41'
 
-git clone https://github.com/l4n1skyy/_DATABASE.git
+git clone https://github.com/l4n1skyy/local-database-web-app-for-personal-stuff.git _DATABASE
 cd _DATABASE
 ln -s "$PWD/bin/db" ~/.local/bin/db     # any folder on your PATH works
 db                                       # creates the databases, starts the app, opens the browser
 ```
 
-The first run creates `chinese.db` and `workouts.db` from `schema/`. To load an existing vocabulary list, run `db import words.csv` (see [Importing words](#importing-words)).
+Clone it wherever you want your data to live: the databases and `backups/` are created inside this folder. The first run creates `chinese.db` and `workouts.db` from `schema/`. To load an existing vocabulary list, run `db import words.csv` (see [Importing words](#importing-words)).
 
 To start it from an app launcher, save this as `~/.local/share/applications/databases.desktop`:
 
