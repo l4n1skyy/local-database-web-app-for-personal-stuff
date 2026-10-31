@@ -133,3 +133,37 @@ if (exercise) {
   // After logging, keep the cursor ready for the next set
   if (new URLSearchParams(location.search).has("msg")) $("#reps").select();
 }
+
+// --- Workout plans -------------------------------------------------------------------
+
+const planRows = $("#plan-rows");
+
+if (planRows) {
+  const clear = (row) => $$("input", row).forEach((i) => (i.value = ""));
+  $("#add-row").addEventListener("click", () => {
+    const row = planRows.lastElementChild.cloneNode(true);
+    clear(row);
+    planRows.append(row);
+    $("input", row).focus();
+  });
+  planRows.addEventListener("click", (e) => {
+    const button = e.target.closest("button");
+    const row = button?.closest("tr");
+    if (!row) return;
+    if (button.hasAttribute("data-remove")) {
+      if (planRows.children.length > 1) row.remove();
+      else clear(row);
+    } else if (button.dataset.move === "-1" && row.previousElementSibling) {
+      row.previousElementSibling.before(row);
+    } else if (button.dataset.move === "1" && row.nextElementSibling) {
+      row.nextElementSibling.after(row);
+    }
+  });
+}
+
+for (const form of $$("form.delete-plan")) {
+  form.addEventListener("submit", (e) => {
+    const name = form.querySelector("button").dataset.name;
+    if (!confirm(`Delete the plan "${name}"? It also comes off every day it's planned on.`)) e.preventDefault();
+  });
+}

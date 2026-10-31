@@ -6,6 +6,7 @@
   <nav class="tabs" aria-label="Workouts">
     <div class="tab-group">
       <a href="?view=log"{% if view == "log" %} aria-current="page"{% endif %}>Log</a>
+      <a href="?view=plans"{% if view == "plans" %} aria-current="page"{% endif %}>Plans</a>
       <a href="?view=history"{% if view == "history" %} aria-current="page"{% endif %}>History</a>
       <a href="?view=stats"{% if view == "stats" %} aria-current="page"{% endif %}>Stats</a>
     </div>
@@ -35,6 +36,35 @@
       <span class="spacer"></span>
       {% if day != today %}<a class="btn small" href="?date={{ today }}">Today</a>{% endif %}
     </header>
+    {% if plan %}
+    <div class="plan-today">
+      <div class="plan-today-head">
+        <span class="badge">plan</span>
+        <h3>{{ plan.name }}</h3>
+        <span class="spacer"></span>
+        <a class="icon" href="?view=plans&amp;plan={{ plan.id }}">edit plan</a>
+      </div>
+      {% if plan.notes %}<p class="muted">{{ plan.notes }}</p>{% endif %}
+      {% if plan.exercises %}
+      <ol class="plan-items">
+        {% for e in plan.exercises %}
+        <li{% if e.sets and e.done >= e.sets %} class="done"{% endif %}>
+          <a href="?date={{ day }}&amp;exercise={{ e.exercise|urlencode }}&amp;reps={{ e.log_reps }}&amp;weight={{ e.log_weight|plain }}" title="Put this in the form">{{ e.exercise }}</a>
+          <span class="muted">{% if e.sets %}{{ e.sets }} × {% endif %}{{ e.reps or "?" }} reps{% if e.weight is not none %} @ {{ e.weight|num }} kg{% endif %}{% if e.notes %} · {{ e.notes }}{% endif %}</span>
+          <span class="spacer"></span>
+          <span class="progress">{{ e.done }}{% if e.sets %}/{{ e.sets }}{% endif %} set{{ "s" if (e.sets or e.done) != 1 }}</span>
+          <form method="post" action="/-/workouts/log">
+            <input type="hidden" name="date" value="{{ day }}"><input type="hidden" name="exercise" value="{{ e.exercise }}">
+            <input type="hidden" name="reps" value="{{ e.log_reps }}"><input type="hidden" name="weight" value="{{ e.log_weight|plain }}">
+            <button class="btn small"{% if not e.log_reps %} disabled title="Give this exercise reps in the plan to log it in one click"{% else %} title="Log {{ e.log_reps }} × {{ e.log_weight|num }} kg"{% endif %}>+ Log set</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ol>
+      {% else %}<p class="muted">This plan has no exercises yet.</p>{% endif %}
+    </div>
+    {% elif rest_day %}<p class="plan-rest muted">Rest day in your plan.</p>
+    {% endif %}
     {% if groups %}
     <p class="muted">{{ groups|length }} exercise{{ "s" if groups|length != 1 }} · {{ total_sets }} set{{ "s" if total_sets != 1 }} · {{ total_volume|num }} kg volume</p>
     {% for g in groups %}
@@ -71,6 +101,126 @@
     {% endif %}
   </section>
 </div>
+
+{% elif view == "plans" %}
+{% if edit %}
+<form class="panel plan-editor" method="post" action="/-/workouts/plan/save" autocomplete="off">
+  <h2>{% if edit.id %}Edit {{ edit.name }}{% else %}New plan{% endif %}</h2>
+  <input type="hidden" name="id" value="{{ edit.id }}">
+  <div class="form-grid">
+    <label>Name <input name="name" value="{{ edit.name }}" required placeholder="Push day"></label>
+    <label class="wide">Notes <textarea name="notes" rows="2" placeholder="Warm up first, rest 2 min between sets, ...">{{ edit.notes }}</textarea></label>
+  </div>
+  <div class="plan-rows-wrap">
+  <table class="plan-rows">
+    <thead><tr><th>Exercise</th><th>Sets</th><th>Reps</th><th>Weight (kg)</th><th>Notes</th><th></th></tr></thead>
+    <tbody id="plan-rows">
+    {% for e in edit.exercises + [none] * (3 if not edit.exercises else 1) %}
+      <tr>
+        <td><input name="exercise" list="plan-exercise-list" value="{{ e.exercise if e else '' }}" placeholder="Bench press" aria-label="Exercise"></td>
+        <td><input name="sets" type="number" min="1" step="1" value="{{ e.sets if e and e.sets else '' }}" class="narrow" aria-label="Sets"></td>
+        <td><input name="reps" value="{{ e.reps if e else '' }}" placeholder="8-12" class="narrow" aria-label="Reps"></td>
+        <td><input name="weight" type="number" min="0" step="0.25" value="{{ e.weight|plain if e else '' }}" placeholder="last time" class="narrow" aria-label="Weight in kg"></td>
+        <td><input name="ex_notes" value="{{ e.notes if e else '' }}" aria-label="Notes"></td>
+        <td class="row-tools">
+          <button type="button" class="icon" data-move="-1" title="Move up">up</button>
+          <button type="button" class="icon" data-move="1" title="Move down">down</button>
+          <button type="button" class="icon danger" data-remove title="Remove">remove</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small-print">Reps can be a range like 8-12. Leave weight empty to use whatever you lifted last time. Empty rows are ignored.</p>
+  <div class="actions">
+    <button type="button" class="btn small" id="add-row">+ Add exercise</button>
+    <span class="spacer"></span>
+    <a class="btn ghost" href="?view=plans">Cancel</a>
+    <button class="btn primary">Save plan</button>
+  </div>
+  <datalist id="plan-exercise-list">{% for n in exercise_names %}<option>{{ n }}</option>{% endfor %}</datalist>
+</form>
+{% else %}
+<div class="plans-layout">
+  <section class="panel schedule">
+    <h2>Coming up</h2>
+    <ol class="upcoming-days">
+      {% for u in upcoming %}
+      <li{% if loop.first %} class="today"{% endif %}>
+        <a href="/-/workouts?date={{ u.date }}">{{ u.date|nice_date }}</a>
+        <span class="{{ '' if u.plan else 'muted' }}">{{ u.plan or "Rest" }}</span>
+        {% if u.source == "one-off" %}<span class="badge">one-off</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ol>
+
+    <h2>Every week</h2>
+    <form class="week-form" method="post" action="/-/workouts/schedule/week">
+      {% for key, label, pid in weekly %}
+      <label class="week-row"><span>{{ label }}</span>
+        <select name="{{ key }}"><option value="">Rest</option>{% for p in plans %}<option value="{{ p.id }}"{% if p.id == pid %} selected{% endif %}>{{ p.name }}</option>{% endfor %}</select>
+      </label>
+      {% endfor %}
+      <button class="btn small">Save week</button>
+    </form>
+
+    <h2>One-off days</h2>
+    <p class="muted small-print">A different plan (or a rest) on one date, without changing your week.</p>
+    <form class="inline-form" method="post" action="/-/workouts/schedule/date">
+      <input type="date" name="date" value="{{ today }}" required aria-label="Date">
+      <select name="plan" aria-label="Plan">
+        <option value="">Rest</option>
+        {% for p in plans %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+        <option value="weekly">Back to the weekly plan</option>
+      </select>
+      <button class="btn small">Set</button>
+    </form>
+    {% if one_offs %}
+    <ul class="one-offs">
+      {% for o in one_offs %}
+      <li>
+        <span>{{ o.date|nice_date }} · {{ o.plan or "Rest" }}</span>
+        <form method="post" action="/-/workouts/schedule/date">
+          <input type="hidden" name="date" value="{{ o.date }}"><input type="hidden" name="plan" value="weekly">
+          <button class="icon danger" title="Go back to the weekly plan on this day">remove</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+
+  <section class="plans">
+    <div class="plans-head">
+      <h2>Plans</h2>
+      <a class="btn small primary" href="?view=plans&amp;plan=new">+ New plan</a>
+    </div>
+    {% for p in plans %}
+    <article class="panel plan-card">
+      <header>
+        <h3>{{ p.name }}</h3>
+        <span class="spacer"></span>
+        <a class="icon" href="?view=plans&amp;plan={{ p.id }}">edit</a>
+        <form method="post" action="/-/workouts/plan/delete" class="delete-plan">
+          <input type="hidden" name="id" value="{{ p.id }}">
+          <button class="icon danger" data-name="{{ p.name }}">delete</button>
+        </form>
+      </header>
+      {% if p.notes %}<p class="muted">{{ p.notes }}</p>{% endif %}
+      {% if p.exercises %}
+      <table>
+        <thead><tr><th>Exercise</th><th class="n">Sets</th><th class="n">Reps</th><th class="n">Weight (kg)</th><th>Notes</th></tr></thead>
+        <tbody>{% for e in p.exercises %}<tr><td>{{ e.exercise }}</td><td class="n">{{ e.sets or "" }}</td><td class="n">{{ e.reps }}</td><td class="n">{{ e.weight|num if e.weight is not none else "last time" }}</td><td class="muted">{{ e.notes }}</td></tr>{% endfor %}</tbody>
+      </table>
+      {% else %}<p class="empty">No exercises yet. <a href="?view=plans&amp;plan={{ p.id }}">Add some</a>.</p>{% endif %}
+    </article>
+    {% else %}
+    <div class="panel"><p class="empty">No plans yet. <a href="?view=plans&amp;plan=new">Make your first one</a>, then put it on days of the week on the left.</p></div>
+    {% endfor %}
+  </section>
+</div>
+{% endif %}
 
 {% elif view == "history" %}
 <section class="panel">

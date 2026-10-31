@@ -13,6 +13,7 @@ It runs on your own computer at http://127.0.0.1:8001, built on [Datasette](http
 |---|---|
 | ![Chinese lists](docs/chinese.png) | ![Workout log](docs/workouts.png) |
 | ![Chinese stats](docs/chinese-stats.png) | ![Workout stats](docs/workouts-stats.png) |
+| | ![Workout plans](docs/workouts-plans.png) |
 
 ## Requirements
 
@@ -114,7 +115,12 @@ To fix a typo or delete a word, hover its card and click **edit**.
 
 Each entry is one set: exercise, reps, weight in kg (0 means bodyweight) and date.
 
-- **Log:** press **Log set** once per set. The form stays filled in for the next set, and picking an exercise fills in what you did last time. **+ Same again** logs another identical set. Sets of the same exercise on the same day are numbered, and one day is one workout. ‹ › steps through earlier workouts, and each set has **edit** and **delete**.
+- **Log:** press **Log set** once per set. The form stays filled in for the next set, and picking an exercise fills in what you did last time. **+ Same again** logs another identical set. Sets of the same exercise on the same day are numbered, and one day is one workout. ‹ › steps through earlier workouts, and each set has **edit** and **delete**. When a plan is on that day, it's shown at the top with how many of each exercise's sets you've done. **+ Log set** next to an exercise logs one set of it as planned, and clicking its name puts it in the form so you can change the numbers first.
+- **Plans:** plan your workouts ahead.
+  - **+ New plan** makes a plan (say "Push day") with a list of exercises, each with target sets, reps (a number or a range like 8-12), weight and notes. Leave the weight empty to use whatever you lifted last time. **up**/**down** reorder the exercises, and **edit**/**delete** on a plan change it later.
+  - **Every week** puts a plan on each weekday (or leaves it a rest day), repeating every week.
+  - **One-off days** set a different plan, or a rest, on one date without changing your week; **Back to the weekly plan** undoes it.
+  - **Coming up** shows the next two weeks, so you can see what's on which day.
 - **History:** every workout with its exercises, sets, reps and volume (kg × reps).
 - **Stats:** workouts this week and month; heaviest set per workout for any exercise (most reps for bodyweight exercises); workouts per week; volume per workout; and personal records with an estimated one-rep max (Epley formula).
 
@@ -154,5 +160,6 @@ The tables:
 - **`study_log`:** a row every time a word changes list; the weekly stats use it.
 - **`settings`:** `revise_after_days` holds the 7 days.
 - **`sets`:** one row per set. The views `set_log`, `workouts` and `records` add set numbers, one row per workout, and best results per exercise.
+- **`plans`**, **`plan_exercises`**, **`plan_schedule`:** the plans, their exercises in order, and which plan is on which day. A day is a weekday (`mon` ... `sun`, every week) or a date (a one-off that wins over its weekday); no plan means a rest day.
 
 Datasette runs this folder in configuration-directory mode, so it loads every `*.db` here along with `plugins/`, `templates/`, `static/` and both YAML files.

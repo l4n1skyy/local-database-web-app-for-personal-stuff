@@ -34,6 +34,57 @@ BEGIN
     UPDATE sets SET exercise = (SELECT name FROM exercises WHERE name = trim(NEW.exercise)) WHERE id = NEW.id;
 END;
 
+-- Plans: named workouts you plan ahead ("Push day"), each a list of exercises
+-- with target sets, reps (a number or a range like "8-12") and weight.
+CREATE TABLE IF NOT EXISTS plans (
+    id    INTEGER PRIMARY KEY,
+    name  TEXT NOT NULL UNIQUE COLLATE NOCASE CHECK (trim(name) <> ''),
+    notes TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS plan_exercises (
+    id       INTEGER PRIMARY KEY,
+    plan_id  INTEGER NOT NULL REFERENCES plans (id),
+    position INTEGER NOT NULL DEFAULT 0,
+    exercise TEXT NOT NULL COLLATE NOCASE REFERENCES exercises (name) CHECK (trim(exercise) <> ''),
+    sets     INTEGER CHECK (sets IS NULL OR sets > 0),
+    reps     TEXT NOT NULL DEFAULT '',
+    weight   REAL CHECK (weight IS NULL OR weight >= 0),  -- kg, empty = whatever you did last time
+    notes    TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS plan_exercises_plan ON plan_exercises (plan_id, position);
+
+-- Which plan is on which day: a weekday ("mon" ... "sun") repeats every week, a
+-- date ("2026-11-02") is a one-off that wins over its weekday. No plan = rest day.
+CREATE TABLE IF NOT EXISTS plan_schedule (
+    day     TEXT PRIMARY KEY
+            CHECK (day IN ('mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun')
+                   OR day GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    plan_id INTEGER REFERENCES plans (id)
+);
+
+-- Deleting a plan takes its exercises and schedule entries with it
+DROP TRIGGER IF EXISTS plans_delete;
+CREATE TRIGGER plans_delete AFTER DELETE ON plans
+BEGIN
+    DELETE FROM plan_exercises WHERE plan_id = OLD.id;
+    DELETE FROM plan_schedule WHERE plan_id = OLD.id;
+END;
+
+-- Plan exercises share the exercise list (and its spelling) with the sets
+DROP TRIGGER IF EXISTS plan_exercises_insert;
+CREATE TRIGGER plan_exercises_insert AFTER INSERT ON plan_exercises
+BEGIN
+    INSERT OR IGNORE INTO exercises (name) VALUES (trim(NEW.exercise));
+    UPDATE plan_exercises SET exercise = (SELECT name FROM exercises WHERE name = trim(NEW.exercise)) WHERE id = NEW.id;
+END;
+DROP TRIGGER IF EXISTS plan_exercises_update;
+CREATE TRIGGER plan_exercises_update AFTER UPDATE OF exercise ON plan_exercises
+WHEN NEW.exercise COLLATE BINARY IS NOT (SELECT name FROM exercises WHERE name = trim(NEW.exercise))
+BEGIN
+    INSERT OR IGNORE INTO exercises (name) VALUES (trim(NEW.exercise));
+    UPDATE plan_exercises SET exercise = (SELECT name FROM exercises WHERE name = trim(NEW.exercise)) WHERE id = NEW.id;
+END;
+
 -- Every set with its set number (1st, 2nd, ... of that exercise that day)
 DROP VIEW IF EXISTS set_log;
 CREATE VIEW set_log AS

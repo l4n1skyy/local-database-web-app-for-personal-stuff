@@ -369,3 +369,53 @@ tbody tr:last-child td { border-bottom: 0; }
   .tab-group + .tab-group { margin-left: 0; }
   .hbar { grid-template-columns: 6.5em 1fr; }
 }
+
+/* --- Workout plans ---------------------------------------------------------------- */
+
+.plans-layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.schedule { display: flex; flex-direction: column; gap: 12px; }
+.schedule h2 { margin: 8px 0 0; }
+.schedule h2:first-child { margin-top: 0; }
+.small-print { font-size: 0.85rem; margin: 0; }
+.upcoming-days { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.upcoming-days li { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-radius: 6px; }
+.upcoming-days li.today { background: var(--surface-2); }
+.upcoming-days li a { width: 7.5em; color: var(--muted); text-decoration: none; font-size: 0.9rem; }
+.upcoming-days li.today a { color: var(--text); }
+.week-form { display: grid; gap: 6px; }
+.week-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 0.95rem; }
+.week-row select { width: 60%; font-size: 0.95rem; }
+.week-form .btn { justify-self: start; margin-top: 4px; }
+.one-offs { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 0.9rem; }
+.one-offs li { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plans { display: flex; flex-direction: column; gap: 14px; }
+.plans-head { display: flex; align-items: center; justify-content: space-between; }
+.plans-head h2 { margin: 0; }
+.plan-card header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.plan-card h3 { font-size: 1.1rem; }
+.plan-card form { display: inline; }
+
+.plan-editor { display: flex; flex-direction: column; gap: 14px; max-width: 980px; }
+.plan-editor h2 { margin: 0; }
+.plan-rows-wrap { overflow-x: auto; }
+.plan-rows td { padding: 4px 8px 4px 0; border: 0; }
+.plan-rows input { width: 100%; }
+.plan-rows input.narrow { width: 7.5em; }
+.row-tools { white-space: nowrap; }
+
+.plan-today { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 6px 0 12px; background: var(--surface-2); }
+.plan-today-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.plan-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.plan-items li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 5px 0; border-top: 1px solid var(--border); }
+.plan-items li:first-child { border-top: 0; }
+.plan-items li > a { font-weight: 700; text-decoration: none; }
+.plan-items li.done > a { text-decoration: line-through; text-decoration-color: var(--muted); }
+.plan-items .progress { font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.plan-items li.done .progress { color: var(--text); }
+.plan-items form { display: inline; }
+.btn:disabled { opacity: 0.4; cursor: default; }
+.plan-rest { margin: 6px 0 12px; }
+
+@media (max-width: 760px) {
+  .plans-layout { grid-template-columns: 1fr; }
+}

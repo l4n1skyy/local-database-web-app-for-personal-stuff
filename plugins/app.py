@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from html import escape
 from math import floor, log10
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
 
 from datasette import hookimpl
 from datasette.utils.asgi import Response
@@ -27,6 +27,8 @@ STATUS_ORDER = ("to learn", "to revise", "learnt")
 # Categorical slots 1-3 of the dataviz reference palette (validated light and dark)
 SERIES = {"light": ("#2a78d6", "#eb6834", "#1baf7a"), "dark": ("#3987e5", "#d95926", "#199e70")}
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 _background = set()
 
 
@@ -482,7 +484,7 @@ def valid_date(value):
 async def workouts(request, datasette):
     wo = datasette.get_database("workouts")
     view = request.args.get("view")
-    if view not in ("log", "history", "stats"):
+    if view not in ("log", "plans", "history", "stats"):
         view = "log"
     day = valid_date(request.args.get("date")) or date.today().isoformat()
     ctx = dict(page="workouts", view=view, day=day, today=date.today().isoformat())
@@ -510,17 +512,168 @@ async def workouts(request, datasette):
             "reps": request.args.get("reps", last.get("reps", "")),
             "weight": request.args.get("weight", plain(last["weight"]) if last else ""),
         }
+        plan = await plan_for_day(wo, day)
+        if plan:
+            done = {g["exercise"].lower(): len(g["sets"]) for g in groups}
+            last_weight = {e["exercise"].lower(): e["weight"] for e in last_per_exercise}
+            for e in plan["exercises"]:
+                e["done"] = done.get(e["exercise"].lower(), 0)
+                first = re.match(r"\d+", e["reps"] or "")
+                e["log_reps"] = int(first.group()) if first else ""
+                e["log_weight"] = e["weight"] if e["weight"] is not None else last_weight.get(e["exercise"].lower(), 0)
         ctx.update(
+            plan=plan, rest_day=plan is None and await is_rest_day(wo, day),
             groups=groups, prefill=prefill, last_per_exercise=last_per_exercise,
             total_sets=len(sets), total_volume=sum(g["volume"] for g in groups),
             prev_day=(await one(wo, "SELECT max(date) AS d FROM sets WHERE date < :d", {"d": day})).get("d"),
             next_day=(await one(wo, "SELECT min(date) AS d FROM sets WHERE date > :d", {"d": day})).get("d"),
         )
+    elif view == "plans":
+        ctx.update(await plans_page(wo, request.args.get("plan")))
     elif view == "history":
         ctx["history"] = await rows(wo, "SELECT * FROM workouts LIMIT 100")
     else:
         ctx.update(await workout_stats(wo, request.args.get("exercise")))
     return await render(datasette, request, "app_workouts.html", **ctx)
+
+
+# --- Workout plans ------------------------------------------------------------------
+
+async def all_plans(wo):
+    plans = await rows(wo, "SELECT id, name, notes FROM plans ORDER BY name COLLATE NOCASE")
+    by_plan = {}
+    for e in await rows(wo, "SELECT * FROM plan_exercises ORDER BY plan_id, position, id"):
+        by_plan.setdefault(e["plan_id"], []).append(e)
+    for p in plans:
+        p["exercises"] = by_plan.get(p["id"], [])
+    return plans
+
+
+async def schedule(wo):
+    return {r["day"]: r["plan_id"] for r in await rows(wo, "SELECT day, plan_id FROM plan_schedule")}
+
+
+def scheduled(day, sched):
+    """(plan id or None, "one-off" or "weekly") for a date: a date entry wins over its weekday."""
+    if day in sched:
+        return sched[day], "one-off"
+    return sched.get(WEEKDAYS[date.fromisoformat(day).weekday()]), "weekly"
+
+
+async def plan_for_day(wo, day):
+    plan_id, _ = scheduled(day, await schedule(wo))
+    return next((p for p in await all_plans(wo) if p["id"] == plan_id), None) if plan_id else None
+
+
+async def is_rest_day(wo, day):
+    """True when the schedule says rest (rather than nothing being planned at all)."""
+    sched = await schedule(wo)
+    return bool(sched) and scheduled(day, sched)[0] is None
+
+
+async def plans_page(wo, editing):
+    plans = await all_plans(wo)
+    sched = await schedule(wo)
+    names = {p["id"]: p["name"] for p in plans}
+    today = date.today()
+    upcoming = []
+    for k in range(14):
+        d = (today + timedelta(days=k)).isoformat()
+        plan_id, source = scheduled(d, sched)
+        upcoming.append({"date": d, "plan": names.get(plan_id), "plan_id": plan_id, "source": source})
+    one_offs = [{"date": d, "plan": names.get(pid)} for d, pid in sorted(sched.items())
+                if DATE_RE.match(d) and d >= today.isoformat()]
+    edit = None
+    if editing == "new":
+        edit = {"id": "", "name": "", "notes": "", "exercises": []}
+    elif editing and editing.isdigit():
+        edit = next((p for p in plans if p["id"] == int(editing)), None)
+    return dict(
+        plans=plans, upcoming=upcoming, one_offs=one_offs, edit=edit,
+        weekly=[(key, WEEKDAY_NAMES[i], sched.get(key)) for i, key in enumerate(WEEKDAYS)],
+        exercise_names=[r["name"] for r in await rows(wo, "SELECT name FROM exercises ORDER BY name COLLATE NOCASE")],
+    )
+
+
+async def plan_save(request, datasette):
+    form = parse_qs((await request.post_body()).decode(), keep_blank_values=True)
+    get = lambda key: (form.get(key) or [""])[0].strip()
+    plan_id, name = get("id"), get("name")
+    if not name:
+        return back("/-/workouts", view="plans", plan=plan_id or "new", error="A plan needs a name.")
+    columns = [form.get(k, []) for k in ("exercise", "sets", "reps", "weight", "ex_notes")]
+    exercises = []
+    for exercise, sets, reps, weight, notes in zip(*columns):
+        if not exercise.strip():
+            continue
+        try:
+            sets_n = int(sets) if sets.strip() else None
+            weight_n = float(weight) if weight.strip() else None
+            if (sets_n is not None and sets_n < 1) or (weight_n is not None and weight_n < 0):
+                raise ValueError
+        except ValueError:
+            return back("/-/workouts", view="plans", plan=plan_id or "new",
+                        error=f"{exercise.strip()}: sets must be a whole number above 0 and weight 0 or more.")
+        exercises.append((exercise.strip(), sets_n, reps.strip(), weight_n, notes.strip()))
+
+    def write(conn):
+        if plan_id:
+            conn.execute("UPDATE plans SET name = ?, notes = ? WHERE id = ?", [name, get("notes"), int(plan_id)])
+            pid = int(plan_id)
+        else:
+            pid = conn.execute("INSERT INTO plans (name, notes) VALUES (?, ?)", [name, get("notes")]).lastrowid
+        conn.execute("DELETE FROM plan_exercises WHERE plan_id = ?", [pid])
+        conn.executemany(
+            "INSERT INTO plan_exercises (plan_id, position, exercise, sets, reps, weight, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [(pid, i + 1, *e) for i, e in enumerate(exercises)])
+
+    try:
+        await datasette.get_database("workouts").execute_write_fn(write)
+    except Exception as e:
+        reason = "there's already a plan with that name" if "UNIQUE" in str(e) else str(e)
+        return back("/-/workouts", view="plans", plan=plan_id or "new", error=f"Couldn't save {name}: {reason}.")
+    return back("/-/workouts", view="plans", msg=f"Saved {name} ({len(exercises)} exercise{'s' * (len(exercises) != 1)}).")
+
+
+async def plan_delete(request, datasette):
+    form = await request.post_vars()
+    wo = datasette.get_database("workouts")
+    plan = await one(wo, "SELECT id, name FROM plans WHERE id = :id", {"id": form.get("id")})
+    if plan:
+        await wo.execute_write("DELETE FROM plans WHERE id = ?", [plan["id"]])
+    return back("/-/workouts", view="plans", msg=f"Deleted {plan['name']}." if plan else None)
+
+
+async def schedule_week(request, datasette):
+    form = await request.post_vars()
+
+    def write(conn):
+        for key in WEEKDAYS:
+            value = form.get(key, "")
+            if value.isdigit():
+                conn.execute("INSERT OR REPLACE INTO plan_schedule (day, plan_id) VALUES (?, ?)", [key, int(value)])
+            else:
+                conn.execute("DELETE FROM plan_schedule WHERE day = ?", [key])
+
+    await datasette.get_database("workouts").execute_write_fn(write)
+    return back("/-/workouts", view="plans", msg="Saved your weekly schedule.")
+
+
+async def schedule_date(request, datasette):
+    form = await request.post_vars()
+    day, value = valid_date(form.get("date")), form.get("plan", "")
+    if not day:
+        return back("/-/workouts", view="plans", error="Pick a date.")
+    wo = datasette.get_database("workouts")
+    if value == "weekly":
+        await wo.execute_write("DELETE FROM plan_schedule WHERE day = ?", [day])
+        msg = f"{nice_date(day)} follows your weekly schedule again."
+    else:
+        plan_id = int(value) if value.isdigit() else None
+        await wo.execute_write("INSERT OR REPLACE INTO plan_schedule (day, plan_id) VALUES (?, ?)", [day, plan_id])
+        name = (await one(wo, "SELECT name FROM plans WHERE id = :id", {"id": plan_id})).get("name") if plan_id else None
+        msg = f"{nice_date(day)}: {name or 'rest day'}."
+    return back("/-/workouts", view="plans", msg=msg)
 
 
 async def workout_stats(wo, exercise):
@@ -605,5 +758,9 @@ def register_routes():
         (r"^/-/workouts$", workouts),
         (r"^/-/workouts/log$", workouts_log),
         (r"^/-/workouts/delete$", workouts_delete),
+        (r"^/-/workouts/plan/save$", plan_save),
+        (r"^/-/workouts/plan/delete$", plan_delete),
+        (r"^/-/workouts/schedule/week$", schedule_week),
+        (r"^/-/workouts/schedule/date$", schedule_date),
         (r"^/-/app/datasette\.css$", datasette_css),
     ]
