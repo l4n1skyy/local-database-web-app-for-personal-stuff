@@ -44,12 +44,14 @@
         <span class="spacer"></span>
         <a class="icon" href="?view=plans&amp;plan={{ plan.id }}">edit plan</a>
       </div>
+      {% if plan.muscles %}<div class="chips">{% for m in plan.muscles %}<span class="chip">{{ m }}</span>{% endfor %}</div>{% endif %}
       {% if plan.notes %}<p class="muted">{{ plan.notes }}</p>{% endif %}
       {% if plan.exercises %}
       <ol class="plan-items">
         {% for e in plan.exercises %}
         <li{% if e.sets and e.done >= e.sets %} class="done"{% endif %}>
           <a href="?date={{ day }}&amp;exercise={{ e.exercise|urlencode }}&amp;reps={{ e.log_reps }}&amp;weight={{ e.log_weight|plain }}" title="Put this in the form">{{ e.exercise }}</a>
+          {% if e.muscle_group %}<span class="chip small">{{ e.muscle_group }}</span>{% endif %}
           <span class="muted">{% if e.sets %}{{ e.sets }} × {% endif %}{{ e.reps or "?" }} reps{% if e.weight is not none %} @ {{ e.weight|num }} kg{% endif %}{% if e.notes %} · {{ e.notes }}{% endif %}</span>
           <span class="spacer"></span>
           <span class="progress">{{ e.done }}{% if e.sets %}/{{ e.sets }}{% endif %} set{{ "s" if (e.sets or e.done) != 1 }}</span>
@@ -113,11 +115,12 @@
   </div>
   <div class="plan-rows-wrap">
   <table class="plan-rows">
-    <thead><tr><th>Exercise</th><th>Sets</th><th>Reps</th><th>Weight (kg)</th><th>Notes</th><th></th></tr></thead>
+    <thead><tr><th>Exercise</th><th>Muscle group</th><th>Sets</th><th>Reps</th><th>Weight (kg)</th><th>Notes</th><th></th></tr></thead>
     <tbody id="plan-rows">
     {% for e in edit.exercises + [none] * (3 if not edit.exercises else 1) %}
       <tr>
         <td><input name="exercise" list="plan-exercise-list" value="{{ e.exercise if e else '' }}" placeholder="Bench press" aria-label="Exercise"></td>
+        <td><input name="muscle" list="muscle-list" value="{{ e.muscle_group if e else '' }}" placeholder="Chest" aria-label="Muscle group"></td>
         <td><input name="sets" type="number" min="1" step="1" value="{{ e.sets if e and e.sets else '' }}" class="narrow" aria-label="Sets"></td>
         <td><input name="reps" value="{{ e.reps if e else '' }}" placeholder="8-12" class="narrow" aria-label="Reps"></td>
         <td><input name="weight" type="number" min="0" step="0.25" value="{{ e.weight|plain if e else '' }}" placeholder="last time" class="narrow" aria-label="Weight in kg"></td>
@@ -132,7 +135,7 @@
     </tbody>
   </table>
   </div>
-  <p class="muted small-print">Reps can be a range like 8-12. Leave weight empty to use whatever you lifted last time. Empty rows are ignored.</p>
+  <p class="muted small-print">Reps can be a range like 8-12. Leave weight empty to use whatever you lifted last time. A muscle group belongs to the exercise, so it shows in every plan that has it and fills in by itself when you pick an exercise you've used; use commas for several ("Chest, Triceps"). Empty rows are ignored.</p>
   <div class="actions">
     <button type="button" class="btn small" id="add-row">+ Add exercise</button>
     <span class="spacer"></span>
@@ -140,6 +143,8 @@
     <button class="btn primary">Save plan</button>
   </div>
   <datalist id="plan-exercise-list">{% for n in exercise_names %}<option>{{ n }}</option>{% endfor %}</datalist>
+  <datalist id="muscle-list">{% for m in muscle_names %}<option>{{ m }}</option>{% endfor %}</datalist>
+  <script type="application/json" id="exercise-muscles">{{ exercise_muscles|tojson }}</script>
 </form>
 {% else %}
 <section class="panel coming-up">
@@ -150,6 +155,7 @@
       <a href="/-/workouts?date={{ u.date }}">
         <span class="when">{{ "Today" if loop.first else u.date|nice_date }}</span>
         <span class="what{{ '' if u.plan else ' rest' }}">{{ u.plan or "Rest" }}</span>
+        {% if u.muscles %}<span class="muscles">{{ u.muscles|join(", ") }}</span>{% endif %}
         {% if u.source == "one-off" %}<span class="badge">one-off</span>{% endif %}
       </a>
     </li>
@@ -215,11 +221,12 @@
           <button class="icon danger" data-name="{{ p.name }}">delete</button>
         </form>
       </header>
+      {% if p.muscles %}<div class="chips">{% for m in p.muscles %}<span class="chip">{{ m }}</span>{% endfor %}</div>{% endif %}
       {% if p.notes %}<p class="muted">{{ p.notes }}</p>{% endif %}
       {% if p.exercises %}
       <table>
-        <thead><tr><th>Exercise</th><th class="n">Sets</th><th class="n">Reps</th><th class="n">Weight (kg)</th><th>Notes</th></tr></thead>
-        <tbody>{% for e in p.exercises %}<tr><td>{{ e.exercise }}</td><td class="n">{{ e.sets or "" }}</td><td class="n">{{ e.reps }}</td><td class="n">{{ e.weight|num if e.weight is not none else "last time" }}</td><td class="muted">{{ e.notes }}</td></tr>{% endfor %}</tbody>
+        <thead><tr><th>Exercise</th><th>Muscle group</th><th class="n">Sets</th><th class="n">Reps</th><th class="n">Weight (kg)</th><th>Notes</th></tr></thead>
+        <tbody>{% for e in p.exercises %}<tr><td>{{ e.exercise }}</td><td class="muted">{{ e.muscle_group }}</td><td class="n">{{ e.sets or "" }}</td><td class="n">{{ e.reps }}</td><td class="n">{{ e.weight|num if e.weight is not none else "last time" }}</td><td class="muted">{{ e.notes }}</td></tr>{% endfor %}</tbody>
       </table>
       {% else %}<p class="empty">No exercises yet. <a href="?view=plans&amp;plan={{ p.id }}">Add some</a>.</p>{% endif %}
     </article>

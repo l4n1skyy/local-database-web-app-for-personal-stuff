@@ -29,6 +29,8 @@ SERIES = {"light": ("#2a78d6", "#eb6834", "#1baf7a"), "dark": ("#3987e5", "#d959
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 WEEKDAY_NAMES = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+MUSCLE_GROUPS = ("Chest", "Back", "Shoulders", "Biceps", "Triceps", "Forearms", "Core", "Quads",
+                 "Hamstrings", "Glutes", "Calves", "Legs", "Full body", "Cardio")
 _background = set()
 
 
@@ -539,13 +541,25 @@ async def workouts(request, datasette):
 
 # --- Workout plans ------------------------------------------------------------------
 
+def split_muscles(text):
+    return [m.strip() for m in (text or "").split(",") if m.strip()]
+
+
 async def all_plans(wo):
     plans = await rows(wo, "SELECT id, name, notes FROM plans ORDER BY name COLLATE NOCASE")
     by_plan = {}
-    for e in await rows(wo, "SELECT * FROM plan_exercises ORDER BY plan_id, position, id"):
+    for e in await rows(wo, """
+            SELECT pe.*, coalesce(em.muscle_group, '') AS muscle_group
+            FROM plan_exercises pe LEFT JOIN exercise_muscles em ON em.exercise = pe.exercise
+            ORDER BY pe.plan_id, pe.position, pe.id"""):
         by_plan.setdefault(e["plan_id"], []).append(e)
     for p in plans:
         p["exercises"] = by_plan.get(p["id"], [])
+        # The plan's muscle groups, in the order its exercises first train them
+        muscles = []
+        for e in p["exercises"]:
+            muscles += [m for m in split_muscles(e["muscle_group"]) if m.lower() not in map(str.lower, muscles)]
+        p["muscles"] = muscles
     return plans
 
 
@@ -575,12 +589,14 @@ async def plans_page(wo, editing):
     plans = await all_plans(wo)
     sched = await schedule(wo)
     names = {p["id"]: p["name"] for p in plans}
+    muscles = {p["id"]: p["muscles"] for p in plans}
     today = date.today()
     upcoming = []
     for k in range(7):
         d = (today + timedelta(days=k)).isoformat()
         plan_id, source = scheduled(d, sched)
-        upcoming.append({"date": d, "plan": names.get(plan_id), "plan_id": plan_id, "source": source})
+        upcoming.append({"date": d, "plan": names.get(plan_id), "plan_id": plan_id, "source": source,
+                         "muscles": muscles.get(plan_id, [])})
     one_offs = [{"date": d, "plan": names.get(pid)} for d, pid in sorted(sched.items())
                 if DATE_RE.match(d) and d >= today.isoformat()]
     edit = None
@@ -592,6 +608,10 @@ async def plans_page(wo, editing):
         plans=plans, upcoming=upcoming, one_offs=one_offs, edit=edit,
         weekly=[(key, WEEKDAY_NAMES[i], sched.get(key)) for i, key in enumerate(WEEKDAYS)],
         exercise_names=[r["name"] for r in await rows(wo, "SELECT name FROM exercises ORDER BY name COLLATE NOCASE")],
+        exercise_muscles={r["exercise"].lower(): r["muscle_group"]
+                          for r in await rows(wo, "SELECT exercise, muscle_group FROM exercise_muscles")},
+        muscle_names=sorted({*MUSCLE_GROUPS, *(m for r in await rows(wo, "SELECT muscle_group FROM exercise_muscles")
+                                               for m in split_muscles(r["muscle_group"]))}, key=str.lower),
     )
 
 
@@ -601,9 +621,9 @@ async def plan_save(request, datasette):
     plan_id, name = get("id"), get("name")
     if not name:
         return back("/-/workouts", view="plans", plan=plan_id or "new", error="A plan needs a name.")
-    columns = [form.get(k, []) for k in ("exercise", "sets", "reps", "weight", "ex_notes")]
-    exercises = []
-    for exercise, sets, reps, weight, notes in zip(*columns):
+    columns = [form.get(k, []) for k in ("exercise", "sets", "reps", "weight", "ex_notes", "muscle")]
+    exercises, muscles = [], {}
+    for exercise, sets, reps, weight, notes, muscle in zip(*columns):
         if not exercise.strip():
             continue
         try:
@@ -615,6 +635,7 @@ async def plan_save(request, datasette):
             return back("/-/workouts", view="plans", plan=plan_id or "new",
                         error=f"{exercise.strip()}: sets must be a whole number above 0 and weight 0 or more.")
         exercises.append((exercise.strip(), sets_n, reps.strip(), weight_n, notes.strip()))
+        muscles[exercise.strip()] = ", ".join(split_muscles(muscle))
 
     def write(conn):
         if plan_id:
@@ -626,6 +647,11 @@ async def plan_save(request, datasette):
         conn.executemany(
             "INSERT INTO plan_exercises (plan_id, position, exercise, sets, reps, weight, notes) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [(pid, i + 1, *e) for i, e in enumerate(exercises)])
+        # Muscle groups belong to the exercise; an empty field leaves what's there
+        for exercise, muscle in muscles.items():
+            if muscle:
+                conn.execute("INSERT OR REPLACE INTO exercise_muscles (exercise, muscle_group) "
+                             "VALUES ((SELECT name FROM exercises WHERE name = ?), ?)", [exercise, muscle])
 
     try:
         await datasette.get_database("workouts").execute_write_fn(write)

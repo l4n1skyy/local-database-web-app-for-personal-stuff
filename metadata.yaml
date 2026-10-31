@@ -34,5 +34,7 @@ databases:
         description: Workout plans. Create and edit them on the Plans tab at /-/workouts?view=plans.
       plan_exercises:
         description: The exercises in each plan, in order, with target sets, reps and weight (empty weight = what you did last time).
+      exercise_muscles:
+        description: The muscle group(s) each exercise trains, e.g. "Chest, Triceps". Set in the plan editor.
       plan_schedule:
         description: Which plan is on which day. day is a weekday (mon ... sun, every week) or a date (a one-off that wins over its weekday); an empty plan_id is a rest day.

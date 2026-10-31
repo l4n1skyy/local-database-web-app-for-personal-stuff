@@ -140,6 +140,14 @@ const planRows = $("#plan-rows");
 
 if (planRows) {
   const clear = (row) => $$("input", row).forEach((i) => (i.value = ""));
+  const muscles = JSON.parse($("#exercise-muscles").textContent);
+  // Picking an exercise you've used before fills in its muscle group
+  planRows.addEventListener("change", (e) => {
+    if (e.target.name !== "exercise") return;
+    const muscle = e.target.closest("tr").querySelector("[name=muscle]");
+    const known = muscles[e.target.value.trim().toLowerCase()];
+    if (known && !muscle.value) muscle.value = known;
+  });
   $("#add-row").addEventListener("click", () => {
     const row = planRows.lastElementChild.cloneNode(true);
     clear(row);

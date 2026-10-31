@@ -53,6 +53,13 @@ CREATE TABLE IF NOT EXISTS plan_exercises (
 );
 CREATE INDEX IF NOT EXISTS plan_exercises_plan ON plan_exercises (plan_id, position);
 
+-- The muscle group(s) each exercise trains ("Chest" or "Chest, Triceps"), set in
+-- the plan editor. It belongs to the exercise, so every plan shows the same.
+CREATE TABLE IF NOT EXISTS exercise_muscles (
+    exercise     TEXT PRIMARY KEY COLLATE NOCASE REFERENCES exercises (name),
+    muscle_group TEXT NOT NULL CHECK (trim(muscle_group) <> '')
+);
+
 -- Which plan is on which day: a weekday ("mon" ... "sun") repeats every week, a
 -- date ("2026-11-02") is a one-off that wins over its weekday. No plan = rest day.
 CREATE TABLE IF NOT EXISTS plan_schedule (
