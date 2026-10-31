@@ -142,19 +142,24 @@
   <datalist id="plan-exercise-list">{% for n in exercise_names %}<option>{{ n }}</option>{% endfor %}</datalist>
 </form>
 {% else %}
-<div class="plans-layout">
-  <section class="panel schedule">
-    <h2>Coming up</h2>
-    <ol class="upcoming-days">
-      {% for u in upcoming %}
-      <li{% if loop.first %} class="today"{% endif %}>
-        <a href="/-/workouts?date={{ u.date }}">{{ u.date|nice_date }}</a>
-        <span class="{{ '' if u.plan else 'muted' }}">{{ u.plan or "Rest" }}</span>
+<section class="panel coming-up">
+  <h2>Coming up</h2>
+  <ol class="upcoming-days">
+    {% for u in upcoming %}
+    <li{% if loop.first %} class="today"{% endif %}>
+      <a href="/-/workouts?date={{ u.date }}">
+        <span class="when">{{ "Today" if loop.first else u.date|nice_date }}</span>
+        <span class="what{{ '' if u.plan else ' rest' }}">{{ u.plan or "Rest" }}</span>
         {% if u.source == "one-off" %}<span class="badge">one-off</span>{% endif %}
-      </li>
-      {% endfor %}
-    </ol>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
 
+<div class="plans-layout">
+  <div class="schedule-col">
+  <section class="panel schedule">
     <h2>Every week</h2>
     <form class="week-form" method="post" action="/-/workouts/schedule/week">
       {% for key, label, pid in weekly %}
@@ -164,7 +169,9 @@
       {% endfor %}
       <button class="btn small">Save week</button>
     </form>
+  </section>
 
+  <section class="panel schedule">
     <h2>One-off days</h2>
     <p class="muted small-print">A different plan (or a rest) on one date, without changing your week.</p>
     <form class="inline-form" method="post" action="/-/workouts/schedule/date">
@@ -190,6 +197,7 @@
     </ul>
     {% endif %}
   </section>
+  </div>
 
   <section class="plans">
     <div class="plans-head">

@@ -373,15 +373,29 @@ tbody tr:last-child td { border-bottom: 0; }
 /* --- Workout plans ---------------------------------------------------------------- */
 
 .plans-layout { display: grid; grid-template-columns: minmax(280px, 340px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.schedule-col { display: flex; flex-direction: column; gap: 20px; }
 .schedule { display: flex; flex-direction: column; gap: 12px; }
-.schedule h2 { margin: 8px 0 0; }
-.schedule h2:first-child { margin-top: 0; }
+.schedule h2 { margin: 0; }
 .small-print { font-size: 0.85rem; margin: 0; }
-.upcoming-days { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.upcoming-days li { display: flex; align-items: center; gap: 10px; padding: 4px 8px; border-radius: 6px; }
-.upcoming-days li.today { background: var(--surface-2); }
-.upcoming-days li a { width: 7.5em; color: var(--muted); text-decoration: none; font-size: 0.9rem; }
-.upcoming-days li.today a { color: var(--text); }
+.coming-up { margin-bottom: 20px; }
+.upcoming-days { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+.upcoming-days a {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  height: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  text-decoration: none;
+}
+.upcoming-days a:hover { border-color: var(--axis); }
+.upcoming-days li.today a { background: var(--surface-2); border-color: var(--accent); }
+.upcoming-days .when { font-size: 0.8rem; color: var(--muted); }
+.upcoming-days li.today .when { color: var(--text); }
+.upcoming-days .what { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upcoming-days .what.rest { font-weight: 400; color: var(--muted); }
+.upcoming-days .badge { margin-top: 2px; }
 .week-form { display: grid; gap: 6px; }
 .week-row { flex-direction: row; align-items: center; justify-content: space-between; gap: 10px; color: var(--text); font-size: 0.95rem; }
 .week-row select { width: 60%; font-size: 0.95rem; }
@@ -416,6 +430,10 @@ tbody tr:last-child td { border-bottom: 0; }
 .btn:disabled { opacity: 0.4; cursor: default; }
 .plan-rest { margin: 6px 0 12px; }
 
+@media (max-width: 1000px) {
+  .upcoming-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 @media (max-width: 760px) {
   .plans-layout { grid-template-columns: 1fr; }
+  .upcoming-days { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
