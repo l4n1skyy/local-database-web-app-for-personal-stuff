@@ -1,0 +1,37 @@
+# Datasette settings for this folder. `db` starts Datasette with this folder,
+# which loads every *.db here plus this file, metadata.yaml, plugins/,
+# templates/ and static/. The day-to-day pages (/, /-/chinese, /-/workouts)
+# come from plugins/app.py; Datasette's own pages are for raw rows.
+# Datasette only listens on 127.0.0.1, so "everyone" below means you on this laptop.
+
+settings:
+  default_page_size: 50
+
+# Theme colours for Datasette's own header and footer
+extra_css_urls: [/-/app/datasette.css]
+
+# Lets you add, edit and delete rows from the table pages
+permissions:
+  insert-row: true
+  update-row: true
+  delete-row: true
+
+databases:
+  chinese:
+    tables:
+      words:
+        facets: [status, hsk]
+        label_column: character
+        column_types:
+          notes: textarea
+      study_log:
+        sort_desc: id
+      statuses: {hidden: true}
+      types: {hidden: true}
+      categories: {hidden: true}
+  workouts:
+    tables:
+      sets:
+        sort_desc: id
+        facets: [exercise, date]
+      exercises: {hidden: true}

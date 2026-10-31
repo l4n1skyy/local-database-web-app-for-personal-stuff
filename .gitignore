@@ -1,0 +1,7 @@
+# Your data stays out of git: the databases, SQLite's side files and the backups
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+backups/
+__pycache__/

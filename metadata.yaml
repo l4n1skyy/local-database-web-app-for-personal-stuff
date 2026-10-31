@@ -1,0 +1,32 @@
+title: My databases
+databases:
+  chinese:
+    description: Chinese vocabulary. Each word is in one list (its status) - to learn, to revise or learnt.
+    tables:
+      words:
+        description: >-
+          Every word. Filter by list with the status facet. Add words with "Insert row";
+          edit or delete with the buttons next to each id. Day-to-day studying is at /-/chinese.
+      to_learn:
+        description: Words you haven't learnt yet.
+      to_revise:
+        description: Learnt words you haven't studied for the revise interval.
+      learnt:
+        description: Words you know. revise_on is the day the sync moves them to "to revise".
+      study_log:
+        description: Every time a word changed list. Used for the weekly stats.
+      settings:
+        description: revise_after_days is the spaced repetition interval (7 by default).
+  workouts:
+    description: One row per set. Same exercise on the same date = that exercise's sets; same date = one workout.
+    tables:
+      sets:
+        description: >-
+          Every set (weight in kg, 0 = bodyweight). Add with "Insert row"; edit or delete with
+          the buttons next to each id. Day-to-day logging is at /-/workouts.
+      set_log:
+        description: Every set with its set number for that exercise that day.
+      workouts:
+        description: One row per workout day.
+      records:
+        description: Best results per exercise. est_1rm is an estimated one-rep max (Epley formula).

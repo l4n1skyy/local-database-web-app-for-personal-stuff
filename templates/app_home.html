@@ -1,0 +1,83 @@
+{% extends "app_base.html" %}
+{% block main %}
+<div class="home">
+  <section class="panel">
+    <header class="panel-head">
+      <h2><a href="/-/chinese">Chinese</a></h2>
+      <span class="muted">{{ counts.values()|sum|num }} words</span>
+    </header>
+    <div class="home-row">
+      <div class="home-side">
+        <div class="tiles">
+          <a class="tile{% if counts['to revise'] %} due{% endif %}" href="/-/chinese?list=to-revise">
+            <span class="tile-label">To revise</span><span class="tile-value">{{ counts['to revise']|num }}</span></a>
+          <a class="tile" href="/-/chinese?list=to-learn">
+            <span class="tile-label">To learn</span><span class="tile-value">{{ counts['to learn']|num }}</span></a>
+          <a class="tile" href="/-/chinese?list=learnt">
+            <span class="tile-label">Learnt</span><span class="tile-value">{{ counts['learnt']|num }}</span></a>
+        </div>
+        <ul class="facts">
+          <li>{% if upcoming %}Next revision: {{ upcoming.words }} word{{ "s" if upcoming.words != 1 }} on {{ upcoming.revise_on|nice_date }} ({{ upcoming.revise_on|days_ago }})
+              {% else %}No learnt words waiting for revision yet{% endif %}</li>
+          <li>Learnt this week: {{ learnt_week }}</li>
+        </ul>
+        <div class="actions">
+          <a class="btn primary" href="/-/chinese">Study</a>
+          <a class="btn" href="/-/chinese?list=add">Add a word</a>
+          <a class="btn ghost" href="/-/chinese?list=stats">Stats</a>
+        </div>
+      </div>
+
+      {% if picks %}
+      <div class="home-picks">
+        <div class="picks-head">
+          <h3>Today's words</h3>
+          <a class="icon" href="/?shuffle={{ shuffle + 1 }}" title="Pick three other words">shuffle</a>
+        </div>
+        <div class="picks">
+          {% for w in picks %}
+          <article class="word pick">
+            <span class="badge{% if w.status == 'to revise' %} due{% endif %}">{{ w.status }}</span>
+            <div class="hanzi" lang="zh-CN">{{ w.character }}</div>
+            <div class="pinyin" lang="zh-Latn-pinyin">{{ w.pinyin }}</div>
+            <div class="english">{{ w.english }}</div>
+            <div class="meta">{{ [w.type, w.category, ("HSK " ~ w.hsk) if w.hsk else ""]|select|join(" · ") }}</div>
+            <form class="moves" method="post" action="/-/chinese/move">
+              <input type="hidden" name="id" value="{{ w.id }}">
+              <input type="hidden" name="from" value="home">
+              <input type="hidden" name="shuffle" value="{{ shuffle }}">
+              <button class="btn primary" name="to" value="learnt">Learnt</button>
+              {% if w.status == "to revise" %}<button class="btn ghost" name="to" value="to learn">Forgot</button>{% endif %}
+            </form>
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+    </div>
+  </section>
+
+  <section class="panel">
+    <header class="panel-head">
+      <h2><a href="/-/workouts">Workouts</a></h2>
+    </header>
+    <div class="home-row">
+      <div class="tiles streaks">
+        <div class="tile">
+          <span class="tile-label">Day streak</span>
+          <span class="tile-value">{{ streak.days }} <small>day{{ "s" if streak.days != 1 }}</small></span>
+        </div>
+        <div class="tile">
+          <span class="tile-label">Week streak</span>
+          <span class="tile-value">{{ streak.weeks }} <small>week{{ "s" if streak.weeks != 1 }}</small></span>
+        </div>
+      </div>
+      <div class="actions">
+        <a class="btn primary" href="/-/workouts">Log a workout</a>
+        <a class="btn" href="/-/workouts?view=history">History</a>
+        <a class="btn ghost" href="/-/workouts?view=stats">Stats</a>
+      </div>
+    </div>
+  </section>
+</div>
+{% endblock %}

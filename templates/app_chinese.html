@@ -1,0 +1,137 @@
+{% extends "app_base.html" %}
+{% block title %}Chinese{% endblock %}
+{% block main %}
+<div class="page-head">
+  <h1>Chinese</h1>
+  <nav class="tabs" aria-label="Chinese">
+    <div class="tab-group">
+      <a href="?list=to-revise"{% if tab == "to-revise" %} aria-current="page"{% endif %}>To revise <span class="count" data-count="to revise">{{ counts["to revise"] }}</span></a>
+      <a href="?list=to-learn"{% if tab == "to-learn" %} aria-current="page"{% endif %}>To learn <span class="count" data-count="to learn">{{ counts["to learn"] }}</span></a>
+      <a href="?list=learnt"{% if tab == "learnt" %} aria-current="page"{% endif %}>Learnt <span class="count" data-count="learnt">{{ counts["learnt"] }}</span></a>
+    </div>
+    <div class="tab-group">
+      <a href="?list=add"{% if tab == "add" %} aria-current="page"{% endif %}>+ Add a word</a>
+      <a href="?list=stats"{% if tab == "stats" %} aria-current="page"{% endif %}>Stats</a>
+    </div>
+  </nav>
+</div>
+
+{% if moved %}<p class="flash" role="status">{{ moved }} learnt word{{ "s" if moved != 1 }} reached {{ interval }} days and moved to To revise.</p>{% endif %}
+
+{% if words is defined %}
+<p class="hint">
+  {% if tab == "to-revise" %}Words you learnt {{ interval }} or more days ago. <b>Learnt</b> puts a word back in Learnt for another {{ interval }} days; <b>Forgot</b> sends it back to To learn.
+  {% elif tab == "to-learn" %}Mark a word <b>Learnt</b> once you know it. It comes back to To revise {{ interval }} days later.
+  {% else %}Words you know. Each one moves to To revise {{ interval }} days after you last studied it; that happens by itself.{% endif %}
+</p>
+
+{% set levels = words|map(attribute="hsk")|select|unique|sort %}
+{% set cats = words|map(attribute="category")|select|unique|sort %}
+<div class="toolbar" role="search">
+  <input type="search" id="q" placeholder="Search character, pinyin or English" autocomplete="off" aria-label="Search">
+  {% if levels %}<select id="f-hsk" aria-label="HSK level"><option value="">All levels</option>{% for l in levels %}<option value="{{ l }}">HSK {{ l }}</option>{% endfor %}</select>{% endif %}
+  {% if cats %}<select id="f-cat" aria-label="Category"><option value="">All categories</option>{% for c in cats %}<option>{{ c }}</option>{% endfor %}</select>{% endif %}
+  <label class="check"><input type="checkbox" id="hide"> Hide pinyin and meaning</label>
+  <span class="spacer"></span>
+  <span class="muted" id="shown">{{ words|length }} word{{ "s" if words|length != 1 }}</span>
+  {% if tab != "learnt" and words %}<button type="button" class="btn small" id="all-learnt">Mark all shown as learnt</button>{% endif %}
+</div>
+
+<div class="words" id="words" data-list="{{ tab }}">
+{% for w in words %}
+  <article class="word" data-id="{{ w.id }}" data-hsk="{{ w.hsk or '' }}" data-cat="{{ w.category or '' }}"
+           data-text="{{ w.character }} {{ w.pinyin }} {{ w.english }} {{ w.notes }}">
+    <a class="edit" href="/chinese/words/{{ w.id }}" title="Edit or delete this word">edit</a>
+    <div class="hanzi" lang="zh-CN">{{ w.character }}</div>
+    <div class="reveal">
+      <div class="pinyin" lang="zh-Latn-pinyin">{{ w.pinyin }}</div>
+      <div class="english">{{ w.english }}</div>
+      {% if w.notes %}<div class="notes">{{ w.notes }}</div>{% endif %}
+    </div>
+    <div class="meta">{{ [w.type, w.category, ("HSK " ~ w.hsk) if w.hsk else ""]|select|join(" · ") }}</div>
+    {% if tab == "to-revise" %}<div class="when">studied {{ w.last_studied|nice_date }} · {{ w.last_studied|days_ago }}</div>
+    {% elif tab == "learnt" %}<div class="when">revise {{ w.revise_on|nice_date }} · {{ w.revise_on|days_ago }}</div>{% endif %}
+    <form class="moves" method="post" action="/-/chinese/move">
+      <input type="hidden" name="id" value="{{ w.id }}">
+      <input type="hidden" name="list" value="{{ tab }}">
+      {% if tab != "learnt" %}<button class="btn primary" name="to" value="learnt">Learnt</button>{% endif %}
+      {% if tab != "to-learn" %}<button class="btn ghost" name="to" value="to learn">Forgot</button>{% endif %}
+    </form>
+  </article>
+{% endfor %}
+</div>
+<p class="empty" id="none"{% if words %} hidden{% endif %}>
+  {% if not words %}{% if tab == "to-revise" %}Nothing to revise right now.{% elif tab == "to-learn" %}No words left to learn. <a href="?list=add">Add some</a>.{% else %}No learnt words yet.{% endif %}
+  {% else %}No words match.{% endif %}
+</p>
+
+{% elif tab == "add" %}
+<form class="panel form-grid" method="post" action="/-/chinese/add">
+  <label class="wide">Character <input name="character" required lang="zh-CN" autofocus></label>
+  <label>Pinyin <input name="pinyin" lang="zh-Latn-pinyin"></label>
+  <label>English <input name="english"></label>
+  <label>Type <input name="type" list="types" placeholder="Noun, Verb, ..."></label>
+  <label>Category <input name="category" list="categories" placeholder="Food, Time, ..."></label>
+  <label>HSK level
+    <select name="hsk"><option value="">None</option>{% for l in range(1, 10) %}<option>{{ l }}</option>{% endfor %}</select></label>
+  <label class="wide">Notes <textarea name="notes" rows="3"></textarea></label>
+  <div class="wide actions">
+    <button class="btn primary">Add to To learn</button>
+    <span class="muted">Many at once: <code>db import file.csv</code></span>
+  </div>
+  <datalist id="types">{% for t in types %}<option>{{ t }}</option>{% endfor %}</datalist>
+  <datalist id="categories">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</datalist>
+</form>
+
+{% else %}
+<div class="tiles stats-tiles">
+  {% for s in status_names %}
+  <a class="tile" href="?list={{ s|replace(' ', '-') }}"><span class="tile-label"><i class="swatch" style="background:var(--series-{{ loop.index }})"></i>{{ s|capitalize }}</span><span class="tile-value">{{ counts[s]|num }}</span></a>
+  {% endfor %}
+</div>
+
+<div class="charts">
+  <section class="panel">
+    <h2>By HSK level</h2>
+    {{ hsk_chart }}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Level</th>{% for s in status_names %}<th class="n">{{ s }}</th>{% endfor %}<th class="n">total</th></tr></thead>
+      <tbody>{% for label, v in hsk_items %}<tr><td>{{ label }}</td>{% for x in v %}<td class="n">{{ x }}</td>{% endfor %}<td class="n">{{ v|sum }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Learnt per week</h2>
+    {{ weekly_chart }}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Week of</th><th class="n">newly learnt</th><th class="n">revised</th></tr></thead>
+      <tbody>{% for label, v in weekly|reverse %}<tr><td>{{ label }}</td><td class="n">{{ v[0] }}</td><td class="n">{{ v[1] }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>By category</h2>
+    {{ cat_chart }}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Category</th>{% for s in status_names %}<th class="n">{{ s }}</th>{% endfor %}<th class="n">total</th></tr></thead>
+      <tbody>{% for label, v in cat_items %}<tr><td>{{ label }}</td>{% for x in v %}<td class="n">{{ x }}</td>{% endfor %}<td class="n">{{ v|sum }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Coming up for revision</h2>
+    {% if upcoming %}
+    <table class="upcoming"><thead><tr><th>Date</th><th class="n">Words</th><th>Characters</th></tr></thead>
+    <tbody>{% for u in upcoming %}<tr><td>{{ u.revise_on|nice_date }} <span class="muted">{{ u.revise_on|days_ago }}</span></td><td class="n">{{ u.words }}</td><td class="chars" lang="zh-CN">{{ u.characters }}</td></tr>{% endfor %}</tbody></table>
+    {% else %}<p class="empty">Nothing learnt yet, so nothing is coming up.</p>{% endif %}
+
+    <h2 class="settings-head">Spaced repetition</h2>
+    <form class="inline-form" method="post" action="/-/chinese/settings">
+      <label>Learnt words come back to To revise after
+        <input type="number" name="days" min="1" value="{{ interval }}" class="days"> days</label>
+      <button class="btn small">Save</button>
+    </form>
+  </section>
+</div>
+{% endif %}
+{% endblock %}

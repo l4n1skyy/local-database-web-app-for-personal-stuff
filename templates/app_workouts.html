@@ -1,0 +1,150 @@
+{% extends "app_base.html" %}
+{% block title %}Workouts{% endblock %}
+{% block main %}
+<div class="page-head">
+  <h1>Workouts</h1>
+  <nav class="tabs" aria-label="Workouts">
+    <div class="tab-group">
+      <a href="?view=log"{% if view == "log" %} aria-current="page"{% endif %}>Log</a>
+      <a href="?view=history"{% if view == "history" %} aria-current="page"{% endif %}>History</a>
+      <a href="?view=stats"{% if view == "stats" %} aria-current="page"{% endif %}>Stats</a>
+    </div>
+  </nav>
+</div>
+
+{% if view == "log" %}
+<div class="log-layout">
+  <form class="panel log-form" method="post" action="/-/workouts/log" autocomplete="off">
+    <h2>Log a set</h2>
+    <label>Exercise <input name="exercise" id="exercise" list="exercise-list" value="{{ prefill.exercise }}" required></label>
+    <div class="row">
+      <label>Reps <input type="number" name="reps" id="reps" min="1" step="1" value="{{ prefill.reps }}" required></label>
+      <label>Weight (kg) <input type="number" name="weight" id="weight" min="0" step="0.25" value="{{ prefill.weight }}" placeholder="0 = bodyweight"></label>
+    </div>
+    <label>Date <input type="date" name="date" value="{{ day }}" required></label>
+    <button class="btn primary">Log set</button>
+    <datalist id="exercise-list">{% for e in last_per_exercise %}<option>{{ e.exercise }}</option>{% endfor %}</datalist>
+    <script type="application/json" id="last-sets">{{ last_per_exercise|tojson }}</script>
+  </form>
+
+  <section class="panel day">
+    <header class="day-head">
+      <a class="btn small ghost{% if not prev_day %} disabled{% endif %}" {% if prev_day %}href="?date={{ prev_day }}"{% endif %} title="Previous workout">‹</a>
+      <h2>{{ day|nice_date(true) }} <span class="muted">{{ day|days_ago }}</span></h2>
+      <a class="btn small ghost{% if not next_day %} disabled{% endif %}" {% if next_day %}href="?date={{ next_day }}"{% endif %} title="Next workout">›</a>
+      <span class="spacer"></span>
+      {% if day != today %}<a class="btn small" href="?date={{ today }}">Today</a>{% endif %}
+    </header>
+    {% if groups %}
+    <p class="muted">{{ groups|length }} exercise{{ "s" if groups|length != 1 }} · {{ total_sets }} set{{ "s" if total_sets != 1 }} · {{ total_volume|num }} kg volume</p>
+    {% for g in groups %}
+    <div class="exercise">
+      <div class="exercise-head">
+        <h3>{{ g.exercise }}</h3>
+        <span class="muted">{{ g.sets|length }} set{{ "s" if g.sets|length != 1 }} · {{ g.reps }} reps{% if g.volume %} · {{ g.volume|num }} kg{% endif %}</span>
+        <span class="spacer"></span>
+        {% set s = g.sets[-1] %}
+        <form method="post" action="/-/workouts/log">
+          <input type="hidden" name="date" value="{{ day }}"><input type="hidden" name="exercise" value="{{ g.exercise }}">
+          <input type="hidden" name="reps" value="{{ s.reps }}"><input type="hidden" name="weight" value="{{ s.weight|plain }}">
+          <button class="btn small" title="Log another {{ s.reps }} × {{ s.weight|num }} kg">+ Same again</button>
+        </form>
+      </div>
+      <ol class="sets">
+        {% for s in g.sets %}
+        <li>
+          <span class="set-no">Set {{ s.set_no }}</span>
+          <span class="set-val">{{ s.reps }} × {% if s.weight %}{{ s.weight|num }} kg{% else %}bodyweight{% endif %}</span>
+          <span class="spacer"></span>
+          <a class="icon" href="/workouts/sets/{{ s.id }}" title="Edit this set">edit</a>
+          <form method="post" action="/-/workouts/delete" class="delete">
+            <input type="hidden" name="id" value="{{ s.id }}">
+            <button class="icon danger" title="Delete this set">delete</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p class="empty">No sets on this day yet. Log one on the left.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% elif view == "history" %}
+<section class="panel">
+  {% if history %}
+  <table class="history">
+    <thead><tr><th>Date</th><th>Exercises</th><th class="n">Sets</th><th class="n">Reps</th><th class="n">Volume (kg)</th></tr></thead>
+    <tbody>
+    {% for h in history %}
+      <tr><td><a href="?date={{ h.date }}">{{ h.date|nice_date(true) }}</a> <span class="muted">{{ h.date|days_ago }}</span></td>
+          <td>{{ h.exercises }}</td><td class="n">{{ h.sets }}</td><td class="n">{{ h.reps }}</td><td class="n">{{ h.volume|num }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="empty">No workouts yet. <a href="?view=log">Log your first set</a>.</p>{% endif %}
+</section>
+
+{% else %}
+<div class="tiles stats-tiles">
+  <div class="tile"><span class="tile-label">This week</span><span class="tile-value">{{ tiles.week or 0 }}</span></div>
+  <div class="tile"><span class="tile-label">This month</span><span class="tile-value">{{ tiles.month or 0 }}</span></div>
+  <div class="tile"><span class="tile-label">All workouts</span><span class="tile-value">{{ tiles.total or 0 }}</span></div>
+  <div class="tile"><span class="tile-label">Last workout</span><span class="tile-value small">{{ tiles.last|days_ago if tiles.last else "-" }}</span></div>
+</div>
+
+<div class="charts">
+  <section class="panel wide">
+    <header class="chart-head">
+      <h2>{% if bodyweight %}Most reps per workout{% else %}Heaviest set per workout{% endif %}</h2>
+      {% if exercises %}
+      <form method="get" class="inline-form">
+        <input type="hidden" name="view" value="stats">
+        <select name="exercise" aria-label="Exercise" onchange="this.form.submit()">
+          {% for e in exercises %}<option{% if e == exercise %} selected{% endif %}>{{ e }}</option>{% endfor %}
+        </select>
+      </form>
+      {% endif %}
+    </header>
+    {{ progress_chart }}
+    {% if progress %}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Date</th><th class="n">Sets</th><th class="n">Heaviest (kg)</th><th class="n">Most reps</th><th class="n">Est. 1RM (kg)</th></tr></thead>
+      <tbody>{% for p in progress|reverse %}<tr><td>{{ p.date|nice_date(true) }}</td><td class="n">{{ p.sets }}</td><td class="n">{{ p.heaviest|num }}</td><td class="n">{{ p.most_reps }}</td><td class="n">{{ p.est_1rm|num }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Workouts per week</h2>
+    {{ weekly_chart }}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Week of</th><th class="n">Workouts</th></tr></thead>
+      <tbody>{% for label, v in weekly|reverse %}<tr><td>{{ label }}</td><td class="n">{{ v[0] }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+  </section>
+
+  <section class="panel">
+    <h2>Volume per workout</h2>
+    {% if volume %}{{ volume_chart }}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Date</th><th class="n">Sets</th><th class="n">Volume (kg)</th></tr></thead>
+      <tbody>{% for v in volume|reverse %}<tr><td>{{ v.date|nice_date(true) }}</td><td class="n">{{ v.sets }}</td><td class="n">{{ v.volume|num }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+    {% else %}<p class="empty">Nothing logged yet.</p>{% endif %}
+  </section>
+
+  <section class="panel wide">
+    <h2>Personal records</h2>
+    {% if records %}
+    <table>
+      <thead><tr><th>Exercise</th><th class="n">Heaviest (kg)</th><th class="n">Reps at heaviest</th><th class="n">Est. 1RM (kg)</th><th class="n">Workouts</th><th class="n">Sets</th><th>Last done</th></tr></thead>
+      <tbody>{% for r in records %}<tr><td><a href="?view=stats&amp;exercise={{ r.exercise|urlencode }}">{{ r.exercise }}</a></td><td class="n">{{ r.heaviest|num }}</td><td class="n">{{ r.reps_at_heaviest }}</td><td class="n">{{ r.est_1rm|num }}</td><td class="n">{{ r.workouts }}</td><td class="n">{{ r.sets }}</td><td>{{ r.last_done|nice_date }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="empty">Nothing logged yet.</p>{% endif %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

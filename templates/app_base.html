@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Databases{% endblock %}</title>
+<style>
+:root {
+  color-scheme: {{ theme.mode }};
+  {% for name, value in theme.vars.items() %}--{{ name }}: {{ value }};
+  {% endfor %}--ui-font: {% if ui_font %}{{ ui_font|tojson }}, {% endif %}"Zpix", ui-monospace, monospace;
+}
+</style>
+<link rel="stylesheet" href="/static/app.css?v={{ v }}">
+<script src="/static/app.js?v={{ v }}" defer></script>
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="/">databases</a>
+  <nav class="main-nav" aria-label="Pages">
+    <a href="/"{% if page == "home" %} aria-current="page"{% endif %}>Home</a>
+    <a href="/-/chinese"{% if page == "chinese" %} aria-current="page"{% endif %}>Chinese</a>
+    <a href="/-/workouts"{% if page == "workouts" %} aria-current="page"{% endif %}>Workouts</a>
+  </nav>
+  <nav class="raw-nav" aria-label="Raw data">
+    <span>raw data</span>
+    <a href="/chinese" title="Browse and edit every table in Datasette">chinese.db</a>
+    <a href="/workouts" title="Browse and edit every table in Datasette">workouts.db</a>
+  </nav>
+</header>
+<main>
+{% if msg %}<p class="flash" role="status">{{ msg }}</p>{% endif %}
+{% if error %}<p class="flash error" role="alert">{{ error }}</p>{% endif %}
+{% block main %}{% endblock %}
+</main>
+<div id="tip" role="tooltip" hidden><b></b><span></span></div>
+</body>
+</html>

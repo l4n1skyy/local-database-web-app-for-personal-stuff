@@ -1,0 +1,244 @@
+#!/usr/bin/env python3
+"""db: my SQLite databases (Chinese vocabulary + workouts), browsed with Datasette.
+
+Usage:
+  db [open]        sync, back up once a day, start Datasette and open it in the browser
+  db restart       stop and start Datasette again, without opening the browser
+  db stop          stop Datasette
+  db sync          move learnt words you haven't studied for N days to "to revise"
+  db import FILE   add Chinese words from a CSV (words already in the database are skipped)
+  db backup        copy both databases into backups/ now
+  db status        is Datasette running, and how many words are in each list
+
+Everything lives in this repo's folder (the one above bin/); DB_DIR overrides it.
+"""
+
+import csv
+import os
+import shutil
+import signal
+import sqlite3
+import subprocess
+import sys
+import time
+import urllib.request
+from datetime import date
+from pathlib import Path
+
+DB_DIR = Path(os.environ.get("DB_DIR", Path(__file__).resolve().parent.parent))
+DATABASES = ("chinese", "workouts")
+STATE_DIR = Path.home() / ".local/state/db"
+PID_FILE = STATE_DIR / "datasette.pid"
+LOG_FILE = STATE_DIR / "datasette.log"
+DATASETTE = Path(shutil.which("datasette") or Path.home() / ".local/bin/datasette")
+PORT = 8001
+URL = f"http://127.0.0.1:{PORT}/"
+KEEP_BACKUPS = 14  # per database
+
+STATUSES = {"to learn": "to learn", "to revise": "to revise", "learnt": "learnt", "learned": "learnt"}
+# CSV header (lowercased, spaces -> _) -> words column
+WORD_COLUMNS = {
+    "character": "character", "hanzi": "character", "chinese": "character", "word": "character",
+    "pinyin": "pinyin",
+    "english": "english", "meaning": "english",
+    "notes": "notes", "note": "notes",
+    "type": "type",
+    "category": "category",
+    "hsk": "hsk", "hsk_level": "hsk", "level": "hsk",
+    "status": "status", "list": "status",
+    "last_studied": "last_studied",
+    "date_added": "date_added",
+}
+
+
+def die(msg):
+    print(f"db: {msg}", file=sys.stderr)
+    if not sys.stderr.isatty():  # started from the app launcher
+        subprocess.run(["notify-send", "-u", "critical", "db", msg[:500]], check=False)
+    sys.exit(1)
+
+
+def connect(name):
+    if not DB_DIR.is_dir():
+        die(f"{DB_DIR} doesn't exist (is the drive it lives on mounted?)")
+    conn = sqlite3.connect(DB_DIR / f"{name}.db")
+    conn.row_factory = sqlite3.Row
+    # Create anything missing and rebuild views/triggers from schema/<name>.sql
+    conn.executescript((DB_DIR / "schema" / f"{name}.sql").read_text())
+    return conn
+
+
+def list_counts(conn):
+    counts = dict(conn.execute("SELECT status, count(*) FROM words GROUP BY status").fetchall())
+    return " · ".join(f"{s} {counts.get(s, 0)}" for s in ("to learn", "to revise", "learnt"))
+
+
+def sync(quiet=False):
+    with connect("chinese") as conn:
+        days = conn.execute("SELECT value FROM settings WHERE key = 'revise_after_days'").fetchone()[0]
+        # The same rule the app runs every few minutes
+        moved = conn.execute((DB_DIR / "schema" / "sync.sql").read_text()).rowcount
+        if not quiet or moved:
+            print(f"Moved {moved} word{'s' * (moved != 1)} not studied for {days}+ days to \"to revise\".")
+        if not quiet:
+            print(f"Lists: {list_counts(conn)}")
+    conn.close()
+
+
+def backup(force=False):
+    folder = DB_DIR / "backups"
+    folder.mkdir(exist_ok=True)
+    made = []
+    for name in DATABASES:
+        target = folder / f"{name}-{date.today()}.db"
+        if target.exists() and not force:
+            continue
+        src = connect(name)
+        dst = sqlite3.connect(target)
+        src.backup(dst)
+        dst.close()
+        src.close()
+        made.append(target.name)
+        for old in sorted(folder.glob(f"{name}-*.db"))[:-KEEP_BACKUPS]:
+            old.unlink()
+    return made
+
+
+def running():
+    try:
+        with urllib.request.urlopen(URL + "-/versions.json", timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def start():
+    for name in DATABASES:
+        connect(name).close()
+    sync(quiet=True)
+    backup()
+    if not running():
+        if not DATASETTE.exists():
+            die("Datasette isn't installed: uv tool install --prerelease=allow 'datasette==1.0a41'")
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(LOG_FILE, "a") as log:
+            proc = subprocess.Popen(
+                [DATASETTE, "serve", DB_DIR, "--host", "127.0.0.1", "--port", str(PORT)],
+                stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True,
+            )
+        PID_FILE.write_text(str(proc.pid))
+        for _ in range(100):
+            if running():
+                break
+            if proc.poll() is not None:
+                die(f"Datasette stopped while starting:\n{LOG_FILE.read_text()[-2000:]}")
+            time.sleep(0.2)
+        else:
+            die(f"Datasette didn't answer on {URL}, see {LOG_FILE}")
+    print(f"Datasette is running at {URL}")
+
+
+def open_():
+    start()
+    subprocess.Popen(["xdg-open", URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def stop():
+    try:
+        pid = int(PID_FILE.read_text())
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except (OSError, ValueError):
+        cmdline = b""
+    if b"datasette" not in cmdline:
+        print("Datasette isn't running." if not running() else f"Datasette on port {PORT} wasn't started by db.")
+        return
+    os.kill(pid, signal.SIGTERM)
+    PID_FILE.unlink(missing_ok=True)
+    print("Stopped Datasette.")
+
+
+def import_words(path):
+    path = Path(path).expanduser()
+    if not path.is_file():
+        die(f"no such file: {path}")
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        mapping = {h: WORD_COLUMNS[k] for h in reader.fieldnames or []
+                   if (k := h.strip().lower().replace(" ", "_")) in WORD_COLUMNS}
+        if "character" not in mapping.values():
+            die(f"{path.name} needs a character (or Hanzi) column; it has: {', '.join(reader.fieldnames or [])}")
+        ignored = [h for h in reader.fieldnames if h not in mapping]
+        rows = []
+        for n, raw in enumerate(reader, start=2):
+            row = {col: (raw[h] or "").strip() for h, col in mapping.items()}
+            if not row.get("character"):
+                continue
+            if row.get("status"):
+                if row["status"].lower() not in STATUSES:
+                    die(f"line {n}: unknown status {row['status']!r} (use to learn, to revise or learnt)")
+                row["status"] = STATUSES[row["status"].lower()]
+            # Blank optional fields: let the column default (or NULL) apply
+            rows.append({k: v for k, v in row.items() if v or k in ("pinyin", "english", "notes")})
+    added = skipped = 0
+    with connect("chinese") as conn:
+        for row in rows:
+            if conn.execute("SELECT 1 FROM words WHERE character = ? AND pinyin = ?",
+                            (row["character"], row.get("pinyin", ""))).fetchone():
+                skipped += 1
+                continue
+            cols = ", ".join(row)
+            marks = ", ".join(f":{c}" for c in row)
+            try:
+                conn.execute(f"INSERT INTO words ({cols}) VALUES ({marks})", row)
+            except sqlite3.IntegrityError as e:
+                die(f"can't add {row['character']} ({e}); nothing was imported")
+            added += 1
+        print(f"Added {added} words, skipped {skipped} already in the database.")
+        if ignored:
+            print(f"Columns not imported: {', '.join(ignored)}")
+        print(f"Lists: {list_counts(conn)}")
+    conn.close()
+
+
+def status():
+    print(f"Datasette: {'running at ' + URL if running() else 'not running'}")
+    with connect("chinese") as conn:
+        print(f"Chinese: {list_counts(conn)}")
+    conn.close()
+    with connect("workouts") as conn:
+        row = conn.execute("SELECT count(DISTINCT date) AS workouts, count(*) AS sets, max(date) AS last FROM sets").fetchone()
+        print(f"Workouts: {row['workouts']} workouts, {row['sets']} sets, last on {row['last'] or '-'}")
+    conn.close()
+
+
+def main(args):
+    cmd = args[0] if args else "open"
+    if cmd == "open" and len(args) <= 1:
+        open_()
+    elif cmd == "stop":
+        stop()
+    elif cmd == "restart":
+        stop()
+        for _ in range(50):
+            if not running():
+                break
+            time.sleep(0.1)
+        start()
+    elif cmd == "sync":
+        sync()
+    elif cmd == "import" and len(args) == 2:
+        import_words(args[1])
+    elif cmd == "backup":
+        made = backup(force=True)
+        print(f"Backed up into {DB_DIR / 'backups'}: {', '.join(made)}")
+    elif cmd == "status":
+        status()
+    elif cmd in ("-h", "--help", "help"):
+        print(__doc__.strip())
+    else:
+        print(__doc__.strip(), file=sys.stderr)
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
