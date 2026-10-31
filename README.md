@@ -120,7 +120,7 @@ Each entry is one set: exercise, reps, weight in kg (0 means bodyweight) and dat
   - **+ New plan** makes a plan (say "Push day") with a list of exercises, each with target sets, reps (a number or a range like 8-12), weight and notes. Leave the weight empty to use whatever you lifted last time. **up**/**down** reorder the exercises, and **edit**/**delete** on a plan change it later.
   - **Every week** puts a plan on each weekday (or leaves it a rest day), repeating every week.
   - **One-off days** set a different plan, or a rest, on one date without changing your week; **Back to the weekly plan** undoes it.
-  - **Coming up** shows the next two weeks, so you can see what's on which day.
+  - **Coming up** shows the next 7 days, so you can see what's on which day.
 - **History:** every workout with its exercises, sets, reps and volume (kg × reps).
 - **Stats:** workouts this week and month; heaviest set per workout for any exercise (most reps for bodyweight exercises); workouts per week; volume per workout; and personal records with an estimated one-rep max (Epley formula).
 

@@ -577,7 +577,7 @@ async def plans_page(wo, editing):
     names = {p["id"]: p["name"] for p in plans}
     today = date.today()
     upcoming = []
-    for k in range(14):
+    for k in range(7):
         d = (today + timedelta(days=k)).isoformat()
         plan_id, source = scheduled(d, sched)
         upcoming.append({"date": d, "plan": names.get(plan_id), "plan_id": plan_id, "source": source})
