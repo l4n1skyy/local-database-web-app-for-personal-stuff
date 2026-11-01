@@ -554,15 +554,17 @@ tbody tr:last-child td { border-bottom: 0; }
 .legend .line-key.dotted { border-top: 2px dotted var(--muted); }
 
 /* Bullets: a bar per category against its budget (the tick); past it, the bar turns red */
-.bullets { display: grid; grid-template-columns: minmax(5em, max-content) minmax(80px, 1fr) max-content; align-items: center; gap: 9px 12px; }
+/* Spent against the budget: a bar on a track per category, then the numbers in columns */
+.bullets { display: grid; grid-template-columns: minmax(5em, max-content) minmax(80px, 1fr) repeat(3, max-content); align-items: center; gap: 9px 14px; }
 .bullet { display: contents; }
 .bullet > .hbar-label { text-align: left; }
-.bullet-track { position: relative; height: 14px; }
-.bullet-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--spending); border-radius: 0 4px 4px 0; }
+.bullet-head { font-size: 0.75rem; color: var(--muted); text-align: right; }
+.bullet-track { position: relative; height: 14px; border-radius: 4px; background: var(--surface-2); }
+.bullet-fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--spending); border-radius: 4px; }
 /* Past the budget: red, and thinner, so it's told apart from the purple by its shape too */
 .bullet-over { position: absolute; top: 3px; bottom: 3px; background: var(--danger); border-radius: 0 4px 4px 0; margin-left: 2px; }
 .bullet-target { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
-.bullet-val { font-size: 0.85rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bullet-val { font-size: 0.85rem; font-variant-numeric: tabular-nums; white-space: nowrap; text-align: right; }
 .bullet:hover .bullet-fill, .bullet:focus .bullet-fill { filter: brightness(1.2); }
 
 .month-status { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: 0.85rem; margin-left: 8px; }

@@ -400,32 +400,39 @@ def combo(labels, tips, bars=(), lines=(), refs=(), fmt=num, faded_label="", est
 
 
 def bullets(items, fmt=num, untargeted="not in budget"):
-    """Ranked horizontal bars, each against its own target: items are (label, value, target
-    or None, share of the total). Past its target a bar turns red and says by how much.
+    """Ranked horizontal bars on a track, each against its own target: items are (label,
+    value, target or None, share of the total). Past its target a bar turns red. The numbers
+    sit in columns: the value, its target, and what's left of it (green) or over it (red).
     A bar without a target says `untargeted`, or its share when that's None."""
-    scale = max([0, *(v for _, v, _, _ in items), *(t or 0 for _, _, t, _ in items)]) or 1
+    # A little room at the end, so the longest bar stops short of the end of its track
+    scale = 1.04 * max([0, *(v for _, v, _, _ in items), *(t or 0 for _, _, t, _ in items)]) or 1
+    targets = any(t is not None for _, _, t, _ in items)
 
     def pct(v):
         return f"{100 * v / scale:.2f}%"
 
-    out = []
+    out = ['<span></span><span></span><span class="bullet-head">Spent</span><span class="bullet-head">Budget</span>'
+           '<span class="bullet-head">Left</span>'] if targets else []
     for label, v, target, share in items:
         over = v - target if target is not None and v > target else 0
         if target is None:
             detail = untargeted or ""
-            note = f'<span class="muted"> · {escape(untargeted) if untargeted else f"{share:.0%}"}</span>'
+            second, third = escape(untargeted) if untargeted else f"{share:.0%}", ""
         elif over:
-            note, detail = f'<span class="muted"> / {fmt(target)}</span> <b class="over-text">+{fmt(over)}</b>', f"{fmt(over)} over a budget of {fmt(target)}"
+            detail = f"{fmt(over)} over a budget of {fmt(target)}"
+            second, third = fmt(target), f'<b class="over-text">-{fmt(over)}</b>'
         else:
-            note, detail = f'<span class="muted"> / {fmt(target)}</span>', f"{fmt(target - v)} left of {fmt(target)}"
+            detail = f"{fmt(target - v)} left of {fmt(target)}"
+            second, third = fmt(target), f'<span class="up">{fmt(target - v)}</span>'
         bar = f'<span class="bullet-fill" style="width:{pct(v - over)}"></span>'
         if over:
-            bar += f'<span class="bullet-over" style="left:{pct(target)};width:{pct(over)}"></span>'
+            bar += f'<span class="bullet-over" style="left:{pct(target)};width:calc({pct(over)} - 2px)"></span>'
         if target is not None:
             bar += f'<i class="bullet-target" style="left:{pct(target)}"></i>'
         out.append(f'<div class="bullet" {_tip(fmt(v), chr(10).join(filter(None, [label, detail, f"{share:.0%} of the spending"])))}>'
                    f'<span class="hbar-label" title="{escape(label)}">{escape(label)}</span>'
-                   f'<span class="bullet-track">{bar}</span><span class="bullet-val">{fmt(v)}{note}</span></div>')
+                   f'<span class="bullet-track">{bar}</span><span class="bullet-val">{fmt(v)}</span>'
+                   f'<span class="bullet-val muted">{second}</span><span class="bullet-val">{third}</span></div>')
     return Markup(f'<div class="bullets">{"".join(out)}</div>')
 
 
