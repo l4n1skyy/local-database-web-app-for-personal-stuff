@@ -97,7 +97,12 @@ def theme():
             "series-1": m["blue"],
             "series-2": m["peach"],
             "series-3": m["teal"],
-            "data": m["blue"],  # one-series charts
+            # The savings chart's own three, with Mocha's purple: as easy to tell apart
+            "savings-1": m["mauve"],
+            "savings-2": m["peach"],
+            "savings-3": m["teal"],
+            "data": m["blue"],  # one-series charts (the share price)
+            "spending": m["mauve"],  # the Stats tab's charts of what you spent
             "context": m["overlay0"],  # grey marks beside the data ("everything else")
         },
     }
@@ -323,12 +328,13 @@ def line(points, unit=""):
     )
 
 
-def combo(labels, tips, bars=(), lines=(), refs=(), fmt=num, faded_label="", hatch_label="estimate"):
+def combo(labels, tips, bars=(), lines=(), refs=(), fmt=num, faded_label="", estimate_label="estimate"):
     """Columns and lines over time on one axis, with reference lines across (a budget, an average).
 
     labels: the x labels. tips: (value, label) per x for the tooltip, which lists every series
     there, so the caller writes it. bars: [{"name", "color", "values", "styles"}] stacked
-    bottom-up; a style is "solid", "hatch" (an estimate) or "faded" (only partly recorded).
+    bottom-up; a style is "solid", "estimate" (faded, with a dashed outline) or "faded" (only
+    partly recorded).
     lines: [{"name", "color", "values" (None = no point), "recorded" ([bool]; a point that
     wasn't recorded gets no dot and a dashed line into it), "dashed" (True for a trend)}].
     refs: [{"name", "value", "style": "dashed" or "dotted"}].
@@ -376,11 +382,11 @@ def combo(labels, tips, bars=(), lines=(), refs=(), fmt=num, faded_label="", hat
     every = max(1, round(n / 14))
     xls = "".join(f'<span class="xl{" alt" if (n - 1 - i) // every % 2 else ""}" style="left:{x(i):.2f}%">{escape(labels[i])}</span>'
                   for i in range(n - 1, -1, -every))
-    keys = [f'<span class="key"><i class="hatch" style="--c:{b["color"]}"></i>{escape(b["name"])}</span>'
-            if all(s == "hatch" for s in b.get("styles", ["solid"])) else
+    keys = [f'<span class="key"><i class="estimate" style="--c:{b["color"]}"></i>{escape(b["name"])}</span>'
+            if all(s == "estimate" for s in b.get("styles", ["solid"])) else
             f'<span class="key"><i style="background:{b["color"]}"></i>{escape(b["name"])}</span>' for b in bars]
-    if any("hatch" in b.get("styles", ()) for b in bars) and not any(all(s == "hatch" for s in b.get("styles", ["solid"])) for b in bars):
-        keys.append(f'<span class="key"><i class="hatch" style="--c:var(--muted)"></i>{escape(hatch_label)}</span>')
+    if any("estimate" in b.get("styles", ()) for b in bars) and not any(all(s == "estimate" for s in b.get("styles", ["solid"])) for b in bars):
+        keys.append(f'<span class="key"><i class="estimate" style="--c:var(--muted)"></i>{escape(estimate_label)}</span>')
     if faded_label and any(s == "faded" and v for b in bars for s, v in zip(b.get("styles", ()), b["values"])):
         keys.append(f'<span class="key"><i class="faded" style="--c:{bars[0]["color"]}"></i>{escape(faded_label)}</span>')
     keys += [f'<span class="key"><i class="line-key{" dash" if ln.get("dashed") else ""}" style="--c:{ln["color"]}"></i>'
@@ -439,15 +445,10 @@ async def home(request, datasette):
                                     AND date >= date('now', 'localtime', '-6 days', 'weekday 1')"""))["n"]
     days = {date.fromisoformat(r["date"]) for r in await rows(wo, "SELECT DISTINCT date FROM sets")}
     shuffle = int(request.args.get("shuffle", "0")) if request.args.get("shuffle", "").isdigit() else 0
-    lines, today = await budget_lines(fi), date.today().isoformat()
-    month = await month_summary(fi, today[:7], lines)
-    finance_home = dict(month=month, **await day_summary(fi, today, lines),
-                        by_category=against_budget(lines["monthly"], await spending(fi, *month_range(today[:7])), extras=False),
-                        savings=await savings_total(fi))
+    today = await day_summary(fi, date.today().isoformat(), await budget_lines(fi))
     return await render(datasette, request, "app_home.html", page="home", counts=counts, upcoming=upcoming,
                         learnt_week=learnt_week, streak=streaks(days), picks=await todays_words(zh, shuffle),
-                        shuffle=shuffle, fin=finance_home,
-                        notebooks=[await notebook_pick(datasette, name) for name in NOTEBOOKS])
+                        shuffle=shuffle, fin=today, quote=await quote_of_the_day(datasette))
 
 
 def streaks(days):
@@ -955,15 +956,6 @@ async def day_summary(fi, day, lines):
                 day_spent=round(sum(r["spent"] for r in spent), 2))
 
 
-async def savings_total(fi):
-    """What's in the accounts plus what the shares are worth, in ringgit"""
-    accounts = (await one(fi, "SELECT sum(balance) AS total FROM latest_balances")).get("total")
-    shares = valuation(await load_shares(fi), date.today().isoformat())
-    if accounts is None and not shares["holding"]:
-        return None
-    return round((accounts or 0) + (shares["worth"] if shares["complete"] else 0), 2)
-
-
 async def category_names(fi):
     """Every category, the most used first"""
     return [r["name"] for r in await rows(fi, """
@@ -994,7 +986,7 @@ async def finance(request, datasette):
         month = request.args.get("month") or ""
         ctx.update(await finance_month(fi, month if MONTH_RE.match(month) else today[:7], lines))
     elif view == "savings":
-        ctx.update(await finance_savings(fi))
+        ctx.update(await finance_savings(fi, request.args.get("year") or ""))
     elif view == "investments":
         ctx.update(await finance_investments(fi, request.args.get("ticker"), request.args.get("range")))
     else:
@@ -1099,9 +1091,9 @@ def month_chart(records, budget, average):
         if r["status"] not in ("current", "future"):
             lines.append("counts in averages" if r["counted"] else "left out of averages")
         tips.append(("-" if r["status"] in ("none", "future") else money(r["spent"]), "\n".join(lines)))
-    bars = [{"name": "Spent", "color": "var(--data)", "values": spent, "styles": styles}]
+    bars = [{"name": "Spent", "color": "var(--spending)", "values": spent, "styles": styles}]
     if any(pace):
-        bars.append({"name": "On pace for", "color": "var(--data)", "values": pace, "styles": ["hatch"] * len(pace)})
+        bars.append({"name": "On pace for", "color": "var(--spending)", "values": pace, "styles": ["estimate"] * len(pace)})
     refs = [{"name": "budget", "value": budget, "style": "dashed"}] if budget else []
     if average:
         refs.append({"name": "average", "value": average, "style": "dotted"})
@@ -1178,7 +1170,7 @@ async def finance_stats(fi, lines, pick):
         daily=[(d, total, cats) for (d, cats), total in zip(per_day.items(), totals)],
         daily_picked=picked, daily_picked_lower=wanted, daily_chosen=bool(await rows(fi, "SELECT 1 FROM daily_chart_categories LIMIT 1")),
         daily_chart=combo([str(date.fromisoformat(d).day) for d in days], tips, fmt=money, refs=refs, bars=[{
-            "name": ", ".join(picked) or "Spent", "color": "var(--data)", "values": totals}]),
+            "name": ", ".join(picked) or "Spent", "color": "var(--spending)", "values": totals}]),
     )
     return ctx
 
@@ -1207,15 +1199,16 @@ async def daily_categories_save(request, datasette):
                 else "Spent per day adds up the daily budget's categories again.")
 
 
-async def finance_savings(fi):
+async def finance_savings(fi, year=""):
+    """The Savings tab. The chart shows the last 24 months, or one year's January to December"""
     latest = await rows(fi, "SELECT * FROM latest_balances")
     entries = await rows(fi, "SELECT id, date, account, balance FROM balances ORDER BY date, id")
     shares = await load_shares(fi)
     today = date.today()
     now = valuation(shares, today.isoformat())
     accounts = [b["account"] for b in latest]
-    # Three chart colours: the accounts, then the investments; with more accounts than
-    # fit, the last account colour holds the rest of them together
+    # Three chart colours (--savings-1..3): the accounts, then the investments; with more
+    # accounts than fit, the last account colour holds the rest of them together
     room = 3 - bool(shares["trades"])
     folded = len(accounts) > room
     names = (accounts[:room - 1] + ["Other accounts"] if folded else accounts) + (["Investments"] if shares["trades"] else [])
@@ -1229,10 +1222,7 @@ async def finance_savings(fi):
         # without an entry keeps the last balance (it's carried over, not zero) and is marked
         # as not recorded, so the chart can show it as an estimate. The investments are
         # worked out from the trades and that day's prices, so they're never carried over.
-        month, current, i = max(first[:7], add_months(this_month, -23)), {}, 0
-        while i < len(entries) and entries[i]["date"] < month + "-01":
-            current[entries[i]["account"].lower()] = entries[i]["balance"]
-            i += 1
+        month, current, i = first[:7], {}, 0
         while month <= this_month:
             end, seen = month_range(month)[1], set()
             while i < len(entries) and entries[i]["date"] < end:
@@ -1253,29 +1243,63 @@ async def finance_savings(fi):
             months.append(dict(month=month, values=values, recorded=recorded, any=any(recorded),
                                total=round(sum(v for v in values if v is not None), 2)))
             month = add_months(month, 1)
+    years = sorted({m["month"][:4] for m in months})
+    year = year if year in years else ""
+    if year:  # January to December; months before the first entry or still to come stay empty
+        have = {m["month"]: m for m in months}
+        shown = [have.get(f"{year}-{k:02d}") or dict(month=f"{year}-{k:02d}", values=[None] * len(names),
+                                                     recorded=[False] * len(names), any=False, total=0, empty=True)
+                 for k in range(1, 13)]
+    else:
+        shown = months[-24:]
     tips = []
-    for m in months:
+    for m in shown:
         parts = [f"{name}: {money(v)}" + ("" if rec else " (carried over)")
                  for name, v, rec in zip(names, m["values"], m["recorded"]) if v is not None]
-        tips.append((money(m["total"]), "\n".join([f"end of {month_name(m['month'])}", *parts]
-                                                  + ([] if m["any"] else ["nothing recorded this month"]))))
-    bars = [{"name": name, "color": f"var(--series-{k + 1})",
-             "values": [max(m["values"][k] or 0, 0) for m in months],
-             "styles": ["solid" if m["recorded"][k] else "hatch" for m in months]} for k, name in enumerate(names)]
-    chart = combo([month_name(m["month"], short=True) for m in months], tips, bars=bars, fmt=money,
-                  hatch_label="carried over, not recorded") if months else ""
+        note = ["nothing yet"] if m.get("empty") else [] if m["any"] else ["nothing recorded this month"]
+        tips.append(("-" if m.get("empty") else money(m["total"]), "\n".join([f"end of {month_name(m['month'])}", *parts, *note])))
+    bars = [{"name": name, "color": f"var(--savings-{k + 1})",
+             "values": [max(m["values"][k] or 0, 0) for m in shown],
+             "styles": ["solid" if m["recorded"][k] else "estimate" for m in shown]} for k, name in enumerate(names)]
+    chart = combo([month_name(m["month"], short=True) for m in shown], tips, bars=bars, fmt=money,
+                  estimate_label="carried over, not recorded") if shown else ""
     recorded_months = [m for m in months if m["any"]]
     change = (round(recorded_months[-1]["total"] - recorded_months[-2]["total"], 2), recorded_months[-2]["month"]) \
         if len(recorded_months) >= 2 else None
     in_accounts = round(sum(b["balance"] for b in latest), 2) if latest else 0
     return dict(
-        latest=latest, change=change, names=names, months=months, balance_chart=chart,
+        latest=latest, change=change, names=names, months=[m for m in shown if not m.get("empty")], balance_chart=chart,
+        years=years, year=year,
         total=round(in_accounts + (now["worth"] if now["complete"] else 0), 2) if latest or now["holding"] else None,
         # Month-end balances: early in a month you're most likely closing the one before
         checkin_date=(today.replace(day=1) - timedelta(days=1) if today.day <= 7 else today).isoformat(),
         accounts=[r["name"] for r in await rows(fi, "SELECT name FROM accounts ORDER BY name COLLATE NOCASE")],
         now=now,
     )
+
+
+# --- Fetching from the internet ---------------------------------------------------
+
+def fetch(request, timeout=60):
+    """urlopen(...).read(), trying twice more when the server can't be reached (a network
+    blip, like a name lookup failing for a moment). Blocking."""
+    for wait in (2, 5, None):
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                return response.read()
+        except urllib.error.HTTPError:
+            raise
+        except (urllib.error.URLError, TimeoutError):
+            if wait is None:
+                raise
+            time.sleep(wait)
+
+
+def offline_reason(e):
+    """An error as the page says it: a network failure in plain words"""
+    if isinstance(e, (urllib.error.URLError, TimeoutError)) and not isinstance(e, urllib.error.HTTPError):
+        return "couldn't reach it (no internet for a moment?); it tries again when you next open Finance"
+    return str(e)
 
 
 # --- Shares -------------------------------------------------------------------------
@@ -1290,8 +1314,7 @@ def _yahoo(symbol, latest=True, **query):
     added when `latest` and it's newer. Blocking: runs in a thread."""
     url = PRICE_URL.format(symbol=quote(symbol), query=urlencode(query))
     request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        result = json.load(response)["chart"]["result"][0]
+    result = json.loads(fetch(request, timeout=20))["chart"]["result"][0]
     closes = result["indicators"]["quote"][0].get("close") or []
     points = [(ts, c) for ts, c in zip(result.get("timestamp") or [], closes) if c]
     meta = result["meta"]
@@ -1523,6 +1546,28 @@ def valuation(shares, day):
     )
 
 
+def exit_costs(shares, now, quotes):
+    """What selling everything today and bringing it back as ringgit would cost, in ringgit:
+    IBKR's commission per ticker (as much as its last trade's) and Wise's fee for changing
+    the rest into ringgit, from its latest quote (`quotes`: {currency: {"amount", "fee"}},
+    receiving IBKR's wire included). Withdrawing from IBKR is free once a month."""
+    last = {t["ticker"]: t["commission"] for t in shares["trades"]}
+    rates = {c: fx for c, (fx, _) in now["rates"].items()}
+    commission = {}
+    for p in now["positions"]:
+        if p["shares"] > 1e-9:
+            commission[p["currency"]] = commission.get(p["currency"], 0) + last.get(p["ticker"], 0)
+    left = {c: v - commission.get(c, 0) for c, v in now["worth_by_currency"].items() if c != "MYR"}
+    wise = {c: quotes[c]["fee"] for c in left if c in quotes}
+
+    def in_myr(fees):
+        return sum(v * (rates.get(c) or 0) for c, v in fees.items())
+
+    return dict(commission=commission, commission_myr=in_myr(commission), left=left, wise=wise, wise_myr=in_myr(wise),
+                known=all(c in quotes for c in left) and all(rates.get(c) for c in left),
+                total=in_myr(commission) + in_myr(wise))
+
+
 def yearly_return(flows, worth, today):
     """The money-weighted return a year (XIRR): the yearly rate at which every ringgit you
     put in, from the day it went in, grows to what it's all worth today. None when it
@@ -1613,8 +1658,7 @@ class FlexError(Exception):
 
 def _flex_get(url, **params):
     request = urllib.request.Request(f"{url}?{urlencode({**params, 'v': 3})}", headers={"User-Agent": "databases-app/1.0"})
-    with urllib.request.urlopen(request, timeout=60) as response:
-        return ET.fromstring(response.read())
+    return ET.fromstring(fetch(request))
 
 
 def flex_statement(token, query):
@@ -1689,8 +1733,8 @@ async def ibkr_sync(datasette):
     try:
         data = parse_flex(await asyncio.to_thread(flex_statement, found["ibkr_flex_token"], found["ibkr_flex_query"]))
     except (FlexError, OSError, ET.ParseError) as e:
-        await fi.execute_write("INSERT OR REPLACE INTO settings (key, value) VALUES ('ibkr_error', ?)", [str(e)])
-        return f"IBKR didn't work: {e}."
+        await fi.execute_write("INSERT OR REPLACE INTO settings (key, value) VALUES ('ibkr_error', ?)", [offline_reason(e)])
+        return f"IBKR didn't work: {offline_reason(e)}."
     have = await rows(fi, "SELECT id, date, ticker, side, shares, price, commission FROM trades")
     used, new_trades, fixed = set(), [], []
     for tr in sorted(data["trades"], key=lambda x: x["date"]):
@@ -1779,8 +1823,7 @@ class WiseError(Exception):
 def _wise_get(token, path):
     request = urllib.request.Request(WISE_URL + path, headers={"Authorization": f"Bearer {token}", "User-Agent": "databases-app/1.0"})
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
-            return json.loads(response.read())
+        return json.loads(fetch(request))
     except urllib.error.HTTPError as e:
         if e.code == 401:
             raise WiseError("Wise didn't accept the API token: make a new one in Wise, Settings → API tokens") from None
@@ -1860,6 +1903,37 @@ def wise_payments(statements, rate):
     return sorted(payments, key=lambda p: (p["date"], p["id"]))
 
 
+def wise_exit_quote(currency, amount):
+    """Wise's fee for changing `amount` of `currency` into ringgit for a bank in Malaysia,
+    the money coming in by bank transfer (how it leaves IBKR), the fee for receiving it
+    included: (fee, rate). The quote Wise's own calculator uses, so no token. Blocking."""
+    body = json.dumps(dict(sourceCurrency=currency, targetCurrency="MYR", sourceAmount=round(amount, 2))).encode()
+    request = urllib.request.Request(f"{WISE_URL}/v3/quotes", data=body,
+                                     headers={"Content-Type": "application/json", "User-Agent": "databases-app/1.0"})
+    quote = json.loads(fetch(request, timeout=30))
+    option = next(o for o in quote["paymentOptions"]
+                  if o["payIn"] == "BANK_TRANSFER" and o["payOut"] == "BANK_TRANSFER" and not o.get("disabled"))
+    return option["fee"]["total"], quote["rate"]
+
+
+async def update_exit_quote(datasette):
+    """Ask Wise what changing everything back into ringgit would cost now (settings.wise_exit_quote)"""
+    fi = datasette.get_database("finance")
+    shares = await load_shares(fi)
+    left = exit_costs(shares, valuation(shares, date.today().isoformat()), {})["left"]
+    quotes = {}
+    try:
+        for currency, amount in left.items():
+            if amount > 0:
+                fee, rate = await asyncio.to_thread(wise_exit_quote, currency, amount)
+                quotes[currency] = dict(amount=round(amount, 2), fee=fee, rate=rate)
+    except (OSError, ValueError, KeyError, StopIteration) as e:
+        return f"Couldn't get Wise's price for changing back to ringgit: {e}."
+    await fi.execute_write("INSERT OR REPLACE INTO settings (key, value) VALUES ('wise_exit_quote', ?)",
+                           [json.dumps(dict(at=datetime.now().isoformat(timespec="minutes"), quotes=quotes))])
+    return ""
+
+
 def _sent_for(payment, deposit):
     """Whether a Wise payment is the money behind an IBKR deposit: same currency and amount,
     sent up to a week before"""
@@ -1887,8 +1961,8 @@ async def wise_sync(datasette):
     try:
         statements = await asyncio.to_thread(wise_statements, token, currencies, since)
     except (WiseError, OSError, ValueError, KeyError) as e:
-        await fi.execute_write("INSERT OR REPLACE INTO settings (key, value) VALUES ('wise_error', ?)", [str(e)])
-        return f"Wise didn't work: {e}."
+        await fi.execute_write("INSERT OR REPLACE INTO settings (key, value) VALUES ('wise_error', ?)", [offline_reason(e)])
+        return f"Wise didn't work: {offline_reason(e)}."
     history = (await load_shares(fi))["history"]
     payments = wise_payments(statements, lambda currency, on: price_on(history, f"{currency}/MYR", on)[0])
     used, to_ibkr = set(), []
@@ -1932,12 +2006,13 @@ _refresh = {}  # "task": the fetch going on, "at": when the last one started
 
 
 async def fetch_everything(datasette):
-    """Prices from Yahoo Finance, and IBKR's statement (and with it Wise's), side by side:
-    what happened. Nothing runs on a timer; the Finance page asks for this when it opens."""
+    """Prices from Yahoo Finance, IBKR's statement (and with it Wise's) and Wise's price for
+    changing back to ringgit, side by side: what happened. Nothing runs on a timer; the
+    Finance page asks for this when it opens."""
     fi = datasette.get_database("finance")
     jobs = [ibkr_sync(datasette)]
     if (await one(fi, "SELECT value FROM settings WHERE key = 'prices_auto'")).get("value") != "off":
-        jobs.append(update_prices(datasette))
+        jobs += [update_prices(datasette), update_exit_quote(datasette)]
     said = await asyncio.gather(*jobs, return_exceptions=True)
     return " ".join(str(s) if not isinstance(s, Exception) else f"Something went wrong: {s}." for s in said if s)
 
@@ -1958,6 +2033,8 @@ async def finance_refresh(request, datasette):
         said = await asyncio.shield(task)
     except Exception as e:
         said = f"Something went wrong: {e}."
+    if re.search(r"didn't work|Couldn't|went wrong", said) and _refresh.get("task") is task:
+        _refresh.pop("at", None)  # so opening Finance again tries again straight away
     print(f"app: {said}")
     return Response.json({"fetched": True, "said": said, "at": _refresh["at"].strftime("%H:%M")})
 
@@ -1974,6 +2051,7 @@ async def finance_investments(fi, pick, rng):
     ibkr = dict(token=bool(found.get("ibkr_flex_token")), query=found.get("ibkr_flex_query") or "",
                 error=found.get("ibkr_error"), waiting=await pending_deposits(fi))
     wise = dict(token=bool(found.get("wise_api_token")), error=found.get("wise_error"))
+    exit_quote = json.loads(found.get("wise_exit_quote") or "{}")
     ctx = dict(now=now, shares=shares, ticker=ticker, range=rng, ranges=RANGES, ibkr=ibkr, wise=wise, held=held,
                yearly=yearly_return(now["flows"], now["worth"], today) if now["complete"] else None,
                since=min((d for d, _ in now["flows"]), default=None))
@@ -1981,6 +2059,7 @@ async def finance_investments(fi, pick, rng):
     # shares themselves did
     cost = sum(p["cost"] for p in now["positions"])
     ctx["market_gain_pct"] = sum(p["value"] - p["cost"] for p in now["positions"]) / cost if cost else None
+    ctx["exit"] = exit_costs(shares, now, exit_quote.get("quotes", {}))
     if not ticker:
         return ctx
     info = shares["tickers"][ticker]
@@ -1992,7 +2071,6 @@ async def finance_investments(fi, pick, rng):
     ctx["market_year_pct"] = latest / year_ago - 1 if latest and year_ago else None
     ctx["day_change"] = latest / closes[-2] - 1 if len(closes) >= 2 else None
     ctx["latest"], ctx["latest_date"], ctx["currency"] = latest, dates[-1] if dates else None, currency
-    ctx["symbol"] = info.get("symbol") or ticker
     position = next((p for p in now["positions"] if p["ticker"] == ticker), None)
     trades = [t for t in shares["trades"] if t["ticker"] == ticker]
     refs = [{"name": "your average cost", "value": position["average"], "style": "dashed"}] if position and position["average"] else []
@@ -2003,21 +2081,18 @@ async def finance_investments(fi, pick, rng):
         points = [(when[11:] if rng == "1d" else short_date(day), f"{nice_date(when[:10])} {when[11:]}", v)
                   for when, day, v in intraday]
         stamps = [day for _, day, _ in intraday]
-        ctx["chart_note"] = "A price every 15 minutes, times in Malaysia" + (f", trading day {nice_date(stamps[-1], True)}" if rng == "1d" and stamps else "")
     else:
         start = {"1m": today - timedelta(days=31), "6m": today - timedelta(days=183), "1y": today - timedelta(days=366)}.get(
             rng, date.fromisoformat(trades[0]["date"]) - timedelta(days=7) if trades else today - timedelta(days=366)).isoformat()
         picked = [(d, c) for d, c in zip(dates, closes) if d >= start]
         points = [(short_date(d), nice_date(d, True), c) for d, c in picked]
         stamps = [d for d, _ in picked]
-        ctx["chart_note"] = "Closing price each trading day"
     marks = []
     for tr in trades:
         i = bisect_right(stamps, tr["date"]) - 1
         if stamps and i >= 0 and stamps[i] == tr["date"]:
             marks.append((i, tr["price"], f"{'Bought' if tr['side'] == 'buy' else 'Sold'} {tr['shares']:g} on {nice_date(tr['date'], True)}"))
     ctx["price_chart"] = price_chart(points, currency, marks, refs, name=ticker)
-    ctx["intraday_time"] = (INTRADAY.get(ticker) or [("",)])[-1][0]
     return ctx
 
 
@@ -2270,14 +2345,11 @@ async def notebook_tags(request, datasette):
     return back(f"/-/{book['name']}", view="tags", msg=msg)
 
 
-async def notebook_pick(datasette, name):
-    """For Home: how many notes and tags there are, and one note picked for the day"""
-    book = NOTEBOOKS[name]
-    db = datasette.get_database(name)
-    entries = await entries_with_tags(db, book)
+async def quote_of_the_day(datasette):
+    """For the top of Home: one quote, the same all day"""
+    found = await rows(datasette.get_database("quotes"), "SELECT id, text, author, source FROM quotes")
     day = date.today().isoformat()
-    pick = min(entries, key=lambda e: hashlib.sha1(f"{day}:{name}:{e['id']}".encode()).digest(), default=None)
-    return dict(book=book, total=len(entries), tags=len(await tag_counts(db, book)), pick=pick)
+    return min(found, key=lambda q: hashlib.sha1(f"{day}:quotes:{q['id']}".encode()).digest(), default=None)
 
 
 # --- Datasette's own pages: match the theme -------------------------------------

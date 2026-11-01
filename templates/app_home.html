@@ -1,6 +1,10 @@
 {% extends "app_base.html" %}
 {% block main %}
 <div class="home">
+  {% if quote %}
+  <a class="home-quote" href="/-/quotes"><q>{{ quote.text }}</q>{% if quote.author or quote.source %} <span class="muted">— {{ [quote.author, quote.source]|select|join(", ") }}</span>{% endif %}</a>
+  {% endif %}
+
   <section class="panel">
     <header class="panel-head">
       <h2><a href="/-/chinese">Chinese</a></h2>
@@ -83,75 +87,18 @@
   <section class="panel">
     <header class="panel-head">
       <h2><a href="/-/finance">Finance</a></h2>
-      <span class="muted">{{ fin.month.month|month_name }}</span>
     </header>
-    <div class="home-row">
-      <div class="home-side">
-        <div class="tiles">
-          <a class="tile" href="/-/finance">
-            <span class="tile-label">Spent today</span><span class="tile-value money">{{ fin.day_spent|money }}</span></a>
-          <a class="tile{% if fin.month.over %} over{% endif %}" href="/-/finance?view=budget">
-            <span class="tile-label">This month</span><span class="tile-value money">{{ fin.month.spent|money }}</span></a>
-          <a class="tile" href="/-/finance?view=savings">
-            <span class="tile-label">Savings</span><span class="tile-value money">{{ fin.savings|money }}</span></a>
-        </div>
-        <ul class="facts">
-          {% if fin.daily_total.budget is not none %}
-          <li>{% if fin.daily_total.over %}{{ (-fin.daily_total.left)|money }} over today's budget{% else %}{{ fin.daily_total.left|money }} of today's {{ fin.daily_total.budget|money }} budget left{% endif %}
-              ({{ fin.daily|map(attribute="category")|join(", ") }})</li>
-          {% endif %}
-          {% if fin.month.budget is not none %}
-          <li>{% if fin.month.over %}{{ (-fin.month.left)|money }} over this month's budget{% else %}{{ fin.month.left|money }} of {{ fin.month.budget|money }} left this month{% if fin.month.per_day %}: {{ fin.month.per_day|money }} a day{% endif %}{% endif %}</li>
-          {% else %}<li>No budget yet</li>{% endif %}
-        </ul>
-        <div class="actions">
-          <a class="btn primary" href="/-/finance">Add an expense</a>
-          <a class="btn" href="/-/finance?view=budget">Budget</a>
-          <a class="btn ghost" href="/-/finance?view=stats">Stats</a>
-        </div>
-      </div>
-      {% if fin.by_category %}
-      <div class="home-budget">
-        <h3>This month's budget</h3>
-        <ul class="budget-rows">
-          {% for c in fin.by_category %}
-          <li{% if c.over %} class="over"{% endif %}><span class="b-cat">{{ c.category }}</span><span class="meter"><i style="width:{{ c.pct }}%"></i></span>
-            <span class="b-val">{{ c.spent|money }} <span class="muted">/ {{ c.budget|money }}</span></span></li>
-          {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-    </div>
+    {% set d = fin.daily_total %}
+    {% if d.budget %}
+    {# The bar is the budget; past it, the bar is everything spent and the red part is over #}
+    <a class="home-day{% if d.over %} over{% endif %}" href="/-/finance" aria-label="Today's budget">
+      <span class="meter">{% if d.over %}<i style="width:{{ 100 * d.budget / d.spent }}%"></i><i class="over" style="flex:1"></i>{% elif d.spent %}<i style="width:{{ d.pct }}%"></i>{% endif %}</span>
+      <span class="home-day-text">
+        <span>{% if d.over %}<b>{{ (-d.left)|money }}</b> over today's budget{% else %}<b>{{ d.left|money }}</b> left of today's budget{% endif %}</span>
+        <span class="muted">{{ d.spent|money }} of {{ d.budget|money }}</span>
+      </span>
+    </a>
+    {% else %}<p class="empty"><a href="/-/finance?view=budget">Set a daily budget</a> to see what's left of it here.</p>{% endif %}
   </section>
-
-  <div class="home-pair">
-    {% for nb in notebooks %}
-    <section class="panel">
-      <header class="panel-head">
-        <h2><a href="/-/{{ nb.book.name }}">{{ nb.book.title }}</a></h2>
-        <span class="muted">{{ nb.total }} {{ nb.book.one if nb.total == 1 else nb.book.many }} · {{ nb.tags }} tag{{ "s" if nb.tags != 1 }}</span>
-      </header>
-      {% set e = nb.pick %}
-      {% if e %}
-      <div class="day-note">
-        <h3>{{ "Quote of the day" if nb.book.name == "quotes" else "A bit to remember" }}</h3>
-        {% if nb.book.name == "quotes" %}
-        <blockquote class="quote-text">{{ e.text }}</blockquote>
-        {% if e.author or e.source %}<p class="attribution">— {{ e.author }}{% if e.author and e.source %}, {% endif %}{% if e.source %}<cite>{{ e.source }}</cite>{% endif %}</p>{% endif %}
-        {% else %}
-        {% if e.title %}<p class="bit-title">{{ e.title }}</p>{% endif %}
-        <p class="bit-text">{{ e.text }}</p>
-        {% endif %}
-        {% if e.tags %}<div class="chips">{% for t in e.tags %}<a class="chip small" href="/-/{{ nb.book.name }}?tag={{ t|urlencode }}">{{ t }}</a>{% endfor %}</div>{% endif %}
-      </div>
-      {% else %}<p class="empty">No {{ nb.book.many }} yet.</p>{% endif %}
-      <div class="actions">
-        <a class="btn primary" href="/-/{{ nb.book.name }}?view=add">Add a {{ nb.book.one }}</a>
-        <a class="btn" href="/-/{{ nb.book.name }}">All {{ nb.book.many }}</a>
-        <a class="btn ghost" href="/-/{{ nb.book.name }}?view=tags">Tags</a>
-      </div>
-    </section>
-    {% endfor %}
-  </div>
 </div>
 {% endblock %}

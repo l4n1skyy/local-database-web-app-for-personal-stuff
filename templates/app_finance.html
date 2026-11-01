@@ -215,14 +215,14 @@
   </div>
   {% for b in latest %}
   <div class="tile">
-    <span class="tile-label"><i class="swatch" style="background:var(--series-{{ b.series }})"></i>{{ b.account }}</span>
+    <span class="tile-label"><i class="swatch" style="background:var(--savings-{{ b.series }})"></i>{{ b.account }}</span>
     <span class="tile-value money">{{ b.balance|money }}</span>
     <span class="tile-note">{{ b.as_of|nice_date }}</span>
   </div>
   {% endfor %}
   {% if now.holding %}
   <a class="tile" href="?view=investments">
-    <span class="tile-label"><i class="swatch" style="background:var(--series-{{ names|length }})"></i>Investments</span>
+    <span class="tile-label"><i class="swatch" style="background:var(--savings-{{ names|length }})"></i>Investments</span>
     <span class="tile-value money">{{ now.worth|money if now.complete else "-" }}</span>
     <span class="tile-note">at the latest prices</span>
   </a>
@@ -253,10 +253,18 @@
 
   <div class="main-col">
     <section class="panel">
-      <h2>Savings at the end of each month</h2>
+      <header class="chart-head">
+        <h2>Savings at the end of each month</h2>
+        {% if years %}
+        <nav class="tab-group" aria-label="Which months">
+          <a href="?view=savings"{% if not year %} aria-current="page"{% endif %}>Last 24 months</a>
+          {% for y in years|reverse %}<a href="?view=savings&amp;year={{ y }}"{% if y == year %} aria-current="page"{% endif %}>{{ y }}</a>{% endfor %}
+        </nav>
+        {% endif %}
+      </header>
       {% if months %}
       {{ balance_chart }}
-      <p class="muted small-print">A month without an entry for an account keeps that account's last balance, hatched, so a month you didn't record never drops to zero. Investments are what the shares were worth at that month's last closing price and exchange rate.</p>
+      <p class="muted small-print">A month without an entry for an account keeps that account's last balance, faded with a dashed outline, so a month you didn't record never drops to zero. Investments are what the shares were worth at that month's last closing price and exchange rate.</p>
       <details class="table-view"><summary>Table</summary>
         <table><thead><tr><th>End of</th>{% for n in names %}<th class="n">{{ n }}</th>{% endfor %}<th class="n">Combined</th></tr></thead>
         <tbody>{% for m in months|reverse %}<tr><td>{{ m.month|month_name }}</td>{% for v in m["values"] %}<td class="n">{% if v is not none %}{{ v|money }}{% if not m.recorded[loop.index0] %}<span class="muted">*</span>{% endif %}{% endif %}</td>{% endfor %}<td class="n">{{ m.total|money }}</td></tr>{% endfor %}</tbody></table>
