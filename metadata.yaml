@@ -38,3 +38,68 @@ databases:
         description: The muscle group(s) each exercise trains, e.g. "Chest, Triceps". Set in the plan editor.
       plan_schedule:
         description: Which plan is on which day. day is a weekday (mon ... sun, every week) or a date (a one-off that wins over its weekday); an empty plan_id is a rest day.
+  finance:
+    description: Money in ringgit (RM). What you spend, your budget, your savings balances and the shares you bought (in US dollars).
+    tables:
+      expenses:
+        description: >-
+          Every expense. Add with "Insert row"; edit or delete with the buttons next to each id.
+          Day-to-day logging is at /-/finance.
+      budget:
+        description: >-
+          What you plan to spend per category, each day (period = daily) or each month (monthly).
+          Easier to edit on the Budget tab at /-/finance?view=budget.
+      balances:
+        description: How much was in a savings account on a date. The newest entry per account is its balance now.
+      trades:
+        description: Shares bought and sold, from IBKR's statement. price and commission are in the share's currency (see tickers).
+      conversions:
+        description: Ringgit sent to IBKR as another currency, from Wise's statements - myr left your account (fee included), amount arrived, fee is the part of myr that was Wise's fee.
+      tickers:
+        description: Every ticker you traded, with its symbol on Yahoo Finance (where prices come from) and its currency.
+      prices:
+        description: Daily closing prices from Yahoo Finance - a ticker's in its currency, exchange rates as "USD/MYR" (ringgit per dollar).
+      monthly_spending:
+        description: Spent per month and category.
+      months:
+        description: One row per month with expenses - spent, the days anything was logged, the monthly budget and what's left of it.
+      daily_chart_categories:
+        description: The categories the Stats tab's "Spent per day" chart adds up. Pick them on that tab; empty means the daily budget's categories.
+      month_settings:
+        description: >-
+          Months you decided yourself to count in averages (counted = 1) or leave out (0). Without a row
+          a month counts once expenses were logged on at least half its days. Set it on the Budget tab.
+      latest_balances:
+        description: Each account's balance now (its newest entry).
+      holdings:
+        description: Shares held per ticker, and what was bought and sold (in the share's currency, commission included). The Savings tab adds what they're worth.
+  quotes:
+    description: Quotes worth keeping, each with one general tag. Day-to-day at /-/quotes.
+    tables:
+      quotes:
+        description: >-
+          Every quote - who said it (author) and where it's from (source: a book, film or show).
+          Easier to add and tag at /-/quotes.
+      tags:
+        description: Every tag. Renaming one here renames it on its quotes; deleting one takes it off them.
+      quote_tags:
+        description: Which quote has which tag (the app gives each quote one). A tag that isn't in tags yet is added to it.
+      quotes_tagged:
+        description: Every quote with its tags.
+      tag_counts:
+        description: How many quotes each tag has.
+  knowledge:
+    description: Knowledge bits - little things worth remembering, each with any number of tags. Day-to-day at /-/knowledge.
+    tables:
+      bits:
+        description: >-
+          Every bit - an optional title, what you learnt, and where from (source: a link, a book, a person).
+          Easier to add and tag at /-/knowledge.
+      tags:
+        description: Every tag. Renaming one here renames it on its bits; deleting one takes it off them.
+      bit_tags:
+        description: Which bit has which tag. A tag that isn't in tags yet is added to it.
+      bits_tagged:
+        description: Every bit with its tags.
+      tag_counts:
+        description: How many bits each tag has.

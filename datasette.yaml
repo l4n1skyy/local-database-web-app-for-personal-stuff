@@ -1,13 +1,13 @@
 # Datasette settings for this folder. `db` starts Datasette with this folder,
 # which loads every *.db here plus this file, metadata.yaml, plugins/,
-# templates/ and static/. The day-to-day pages (/, /-/chinese, /-/workouts)
-# come from plugins/app.py; Datasette's own pages are for raw rows.
+# templates/ and static/. The day-to-day pages (/, /-/chinese, /-/workouts,
+# /-/finance, /-/quotes, /-/knowledge) come from plugins/app.py; Datasette's own pages are for raw rows.
 # Datasette only listens on 127.0.0.1, so "everyone" below means you on this laptop.
 
 settings:
   default_page_size: 50
 
-# Theme colours for Datasette's own header and footer
+# Datasette's own pages in the app's colours (static/datasette.css, served by plugins/app.py)
 extra_css_urls: [/-/app/datasette.css]
 
 # Lets you add, edit and delete rows from the table pages
@@ -35,3 +35,41 @@ databases:
         sort_desc: id
         facets: [exercise, date]
       exercises: {hidden: true}
+  finance:
+    tables:
+      expenses:
+        sort_desc: date
+        facets: [category]
+      balances:
+        sort_desc: date
+        facets: [account]
+        column_types:
+          notes: textarea
+      trades:
+        sort_desc: date
+        facets: [ticker, side]
+      conversions:
+        sort_desc: date
+      prices:
+        sort_desc: date
+        facets: [ticker]
+      settings: {hidden: true}
+      categories: {hidden: true}
+      accounts: {hidden: true}
+  quotes:
+    tables:
+      quotes:
+        sort_desc: id
+        column_types:
+          text: textarea
+          notes: textarea
+      quote_tags:
+        facets: [tag]
+  knowledge:
+    tables:
+      bits:
+        sort_desc: id
+        column_types:
+          text: textarea
+      bit_tags:
+        facets: [tag]

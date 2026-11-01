@@ -1,5 +1,5 @@
 // The app pages: chart tooltips, the word lists (search, filters, quiz mode,
-// moving words without a page reload) and the workout log form.
+// moving words without a page reload), the workout log form and the finance forms.
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -173,5 +173,100 @@ for (const form of $$("form.delete-plan")) {
   form.addEventListener("submit", (e) => {
     const name = form.querySelector("button").dataset.name;
     if (!confirm(`Delete the plan "${name}"? It also comes off every day it's planned on.`)) e.preventDefault();
+  });
+}
+
+// --- Finance -------------------------------------------------------------------------
+
+for (const form of $$("form[data-confirm]")) {
+  form.addEventListener("submit", (e) => {
+    if (!confirm(form.dataset.confirm)) e.preventDefault();
+  });
+}
+
+const category = $("#category");
+
+if (category) {
+  // The category buttons under the field fill it in; the one matching the field is lit
+  const chips = $$("[data-category]");
+  const mark = () =>
+    chips.forEach((c) => c.setAttribute("aria-pressed", c.dataset.category.toLowerCase() === category.value.trim().toLowerCase()));
+  for (const chip of chips) {
+    chip.addEventListener("click", () => {
+      category.value = chip.dataset.category;
+      mark();
+      $("#amount").focus();
+    });
+  }
+  category.addEventListener("input", mark);
+  mark();
+}
+
+// Budget editor: add and remove lines, and keep each column's total up to date
+for (const box of $$(".budget-edit")) {
+  const body = $("tbody", box);
+  const total = $("[data-total]", box);
+  const update = () => {
+    const sum = $$("input[type=number]", body).reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+    total.textContent = "RM" + sum.toLocaleString("en", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  body.addEventListener("input", update);
+  $("[data-add-row]", box).addEventListener("click", () => {
+    const row = body.lastElementChild.cloneNode(true);
+    $$("input", row).forEach((i) => (i.value = ""));
+    body.append(row);
+    $("input", row).focus();
+  });
+  body.addEventListener("click", (e) => {
+    const row = e.target.closest("[data-remove]")?.closest("tr");
+    if (!row) return;
+    if (body.children.length > 1) row.remove();
+    else $$("input", row).forEach((i) => (i.value = ""));
+    update();
+  });
+}
+
+// Finance: opening the page fetches the latest prices, IBKR's statement and Wise's (the
+// server skips it if it did so in the last 5 minutes); then the Investments tab, which
+// has nothing to type into, is swapped for one with the new numbers
+const refreshStatus = $("[data-refresh-status]");
+if (refreshStatus) {
+  (async () => {
+    refreshStatus.textContent = "Fetching prices, IBKR and Wise…";
+    try {
+      const result = await (await fetch("/-/finance/refresh", { method: "POST" })).json();
+      const live = $("[data-refresh]");
+      if (result.fetched && live) {
+        const res = await fetch(live.dataset.refresh, { headers: { Accept: "text/html" } });
+        const fresh = document.createElement("div");
+        fresh.innerHTML = res.ok ? await res.text() : "";
+        const next = fresh.querySelector("[data-refresh]");
+        if (next) live.replaceWith(next);
+      }
+      const trouble = /didn't work|Couldn't|went wrong/.test(result.said || "");
+      refreshStatus.textContent = trouble ? result.said : `Up to date, fetched at ${result.at}`;
+      refreshStatus.title = result.said || "";
+    } catch {
+      refreshStatus.textContent = "Couldn't fetch the latest: offline?";
+    }
+  })();
+}
+
+// --- Quotes and Knowledge: search what's shown -------------------------------------------
+
+const notes = $("#notes");
+
+if (notes) {
+  const q = $("#note-q"), shown = $("#note-shown");
+  const plain = (s) => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  q.addEventListener("input", () => {
+    const text = plain(q.value.trim());
+    let n = 0;
+    for (const card of $$(".note-card", notes)) {
+      card.hidden = text && !plain(card.dataset.text).includes(text);
+      if (!card.hidden) n++;
+    }
+    shown.textContent = `${n} ${n === 1 ? shown.dataset.one : shown.dataset.many}`;
+    $("#note-none").hidden = n > 0;
   });
 }

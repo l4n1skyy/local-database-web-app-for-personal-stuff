@@ -1,0 +1,131 @@
+/* Datasette's own pages (/chinese, /workouts, /finance and their tables) in the app's
+   colours. plugins/app.py serves this at /-/app/datasette.css after a :root block with the
+   colour variables (the same ones the app pages use); datasette.yaml loads it. Datasette's
+   stylesheet has its colours written into the rules, so this overrides them rule by rule. */
+
+html { color-scheme: dark; }
+body { background: var(--bg); color: var(--text); }
+::selection { background: var(--surface0); }
+
+/* Header and footer */
+header.hd, footer.ft { background: var(--surface); color: var(--text); border: 0; }
+header.hd { border-bottom: 1px solid var(--border); }
+footer.ft { border-top: 1px solid var(--border); color: var(--muted); }
+header.hd a:link, header.hd a:visited, header.hd a:hover, header.hd a:focus,
+footer.ft a:link, footer.ft a:visited, footer.ft a:hover, footer.ft a:focus,
+header.hd button.button-as-link, footer.ft button.button-as-link,
+header.hd .crumbs a, header.hd details.nav-menu summary svg { color: var(--text); }
+details.nav-menu .nav-menu-inner, .nav-menu-inner { background: var(--surface-2); border: 1px solid var(--border); color: var(--text); }
+form.nav-menu-logout { border-top-color: var(--border); }
+
+/* Links and text */
+a:link, button.button-as-link, button.count-all { color: var(--blue); }
+a:visited { color: var(--lavender); }
+a:hover, a:focus, a:active, button.button-as-link:hover, button.button-as-link:focus { color: var(--accent); }
+.meta, .facet-info-total, .type-float, .type-int, table.rows-and-columns td em,
+.dropdown-menu .dropdown-column-type, .dropdown-menu .dropdown-column-description,
+.dropdown-menu .dropdown-description { color: var(--muted); }
+.page-header { border-left-color: var(--accent); }
+pre, code { background: var(--surface); color: var(--text); }
+
+/* Messages */
+.message-info { background: color-mix(in srgb, var(--green) 18%, transparent); }
+.message-warning { background: color-mix(in srgb, var(--yellow) 18%, transparent); }
+.message-error { background: color-mix(in srgb, var(--danger) 20%, transparent); }
+p.zero-results { background: var(--surface); border-color: var(--border); }
+
+/* Tables */
+table.rows-and-columns th { background: var(--surface); border-bottom: 1px solid var(--surface2); }
+table.rows-and-columns td { border-top-color: var(--border); border-right-color: var(--border); }
+table.rows-and-columns tr:hover td { background: var(--surface); }
+
+/* Forms: the filters, the SQL box, search, and every input Datasette draws */
+.filters, column-chooser, dialog.datasette-modal {
+  --filter-ink: var(--text); --filter-paper: var(--surface); --filter-muted: var(--muted);
+  --filter-rule: var(--border); --filter-accent: var(--accent); --filter-control-border: var(--surface1);
+  --ink: var(--text); --paper: var(--surface); --muted: var(--subtext0); --rule: var(--border);
+  --accent: var(--mauve); --accent-light: var(--surface0); --card: var(--surface);
+}
+input, select, textarea, .select-wrapper, .select-wrapper select, form.sql textarea,
+.filters input.filter-value, .filters #_search, input.core[type=search], input.core[type=text],
+.row-edit-input, .row-edit-binary-control, .row-edit-default-button, .row-edit-binary-clear,
+.table-create-input, .table-alter-input, .table-create-add-column, .table-alter-add-column,
+.table-alter-default-options, .row-edit-bulk-textarea, .table-create-data-textarea {
+  background-color: var(--surface) !important;
+  color: var(--text) !important;
+  border-color: var(--surface1) !important;
+}
+input::placeholder, textarea::placeholder { color: var(--overlay0); }
+input.core[type=submit], .filters input[type=submit], button.core[type=submit],
+.filters button.filter-row-add, .modal-btn-primary, :where(.datasette-modal) .modal-btn-primary,
+column-chooser .modal-btn-primary {
+  background: var(--accent) !important; border-color: var(--accent) !important; color: var(--on-accent) !important;
+}
+button.core[type=button], .modal-btn, .row-inline-action, .table-create-icon-button,
+.table-alter-icon-button, .filters button.filter-row-icon, .filters button.filter-row-remove {
+  background: var(--surface-2) !important; color: var(--text) !important; border-color: var(--surface1) !important;
+}
+.table-alter-dialog .modal-btn-danger { background: var(--danger) !important; color: var(--on-accent) !important; }
+.CodeMirror, .cm-editor { background: var(--surface) !important; color: var(--text); }
+.cm-gutters { background: var(--surface) !important; border-color: var(--border) !important; }
+
+/* Pop-ups: modals, menus, the column chooser, the search box */
+dialog.datasette-modal, column-chooser dialog, .mobile-column-actions-dialog,
+.dropdown-menu, .datasette-autocomplete-list, navigation-search dialog {
+  background: var(--surface) !important; color: var(--text); border-color: var(--border) !important;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.5) !important;
+}
+.dropdown-menu li { border-bottom-color: var(--border); }
+.dropdown-menu a:link, .dropdown-menu a:visited, .dropdown-menu button.action-menu-button { color: var(--text); }
+.dropdown-menu a:hover, .dropdown-menu button.action-menu-button:hover,
+.dropdown-menu button.action-menu-button:focus { background: var(--surface-2); }
+column-chooser .list-wrap::before, column-chooser .list-wrap::after,
+.mobile-column-actions-dialog .list-wrap::before, .mobile-column-actions-dialog .list-wrap::after {
+  background: none !important;
+}
+navigation-search .search-input-wrapper, navigation-search .jump-start-content,
+navigation-search .hint-text { border-color: var(--border) !important; }
+navigation-search .result-item:hover, navigation-search .result-item.selected { background: var(--surface-2) !important; }
+navigation-search .result-name, navigation-search .result-description { color: var(--text) !important; }
+navigation-search .result-label, navigation-search .result-type, navigation-search .result-url,
+navigation-search .results-heading, navigation-search .hint-text { color: var(--muted) !important; }
+navigation-search .hint-text kbd { background: var(--surface-2) !important; border-color: var(--border) !important; color: var(--text); }
+
+/* Errors and notices from editing rows and tables */
+.row-mutation-status { background: color-mix(in srgb, var(--green) 14%, transparent); border-left-color: var(--green); color: var(--text); }
+.row-mutation-status-error { background: color-mix(in srgb, var(--danger) 14%, transparent); border-left-color: var(--danger); }
+.row-edit-error, .table-create-error, .table-alter-error, .table-alter-review-warning {
+  background: color-mix(in srgb, var(--danger) 14%, transparent) !important; border-left-color: var(--danger) !important; color: var(--text) !important;
+}
+.row-edit-field-validation-error, .set-column-type-error, .row-delete-error { color: var(--danger); }
+.table-alter-review-name { background: var(--surface-2); border-color: var(--border); }
+
+/* The buttons on the SQL form and the page action menus ("Row actions", "Table actions") */
+form.sql input[type=submit], form.core input[type=submit], .page-action-menu .icon-text {
+  background: var(--accent) !important; border-color: var(--accent) !important; color: var(--on-accent) !important;
+}
+form.sql button[type=button]:not(.button-as-link), button#sql-format {
+  background: var(--surface-2) !important; color: var(--text) !important; border: 1px solid var(--surface1) !important;
+}
+/* Datasette gives each database its own colour on the page title; here they're all the accent */
+.page-header { border-left-color: var(--accent) !important; }
+
+/* The SQL editor (CodeMirror) */
+.cm-editor { background: var(--surface) !important; color: var(--text); }
+.cm-editor .cm-content { caret-color: var(--text); }
+.cm-editor .cm-gutters { background: var(--surface) !important; color: var(--overlay0); border-right: 1px solid var(--border) !important; }
+.cm-editor .cm-activeLine { background: color-mix(in srgb, var(--surface0) 45%, transparent) !important; }
+.cm-editor .cm-activeLineGutter { background: var(--surface0) !important; color: var(--text); }
+.cm-editor .cm-cursor { border-left-color: var(--text) !important; }
+.cm-editor .cm-selectionBackground, .cm-editor.cm-focused .cm-selectionBackground { background: var(--surface1) !important; }
+.cm-editor.cm-focused { outline: 1px solid var(--accent) !important; }
+/* Syntax colours: keywords, numbers, strings */
+.cm-editor .ͼb { color: var(--mauve); }
+.cm-editor .ͼd { color: var(--peach); }
+.cm-editor .ͼe { color: var(--green); }
+.cm-tooltip { background: var(--surface-2) !important; color: var(--text); border-color: var(--border) !important; }
+.cm-tooltip-autocomplete ul li[aria-selected] { background: var(--surface1) !important; color: var(--text) !important; }
+/* Primary buttons in dialogs ("Save", "Insert") after the plain .modal-btn rule above */
+.modal-btn.modal-btn-primary, button.modal-btn-primary {
+  background: var(--accent) !important; border-color: var(--accent) !important; color: var(--on-accent) !important;
+}

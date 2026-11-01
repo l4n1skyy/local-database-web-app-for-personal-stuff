@@ -1,0 +1,381 @@
+{% extends "app_base.html" %}
+{% block title %}Finance{% endblock %}
+{% block main %}
+{% macro bar(m) %}<span class="meter"><i style="width:{{ m.pct }}%"></i></span>{% endmacro %}
+{% macro left_text(m) %}{% if m.over %}<b class="over-text">{{ (-m.left)|money }} over</b>{% else %}{{ m.left|money }} left{% endif %}{% endmacro %}
+{% macro month_status(r, view) %}
+<form class="month-status" method="post" action="/-/finance/month">
+  <input type="hidden" name="month" value="{{ r.month }}"><input type="hidden" name="view" value="{{ view }}">
+  <span class="muted">{% if r.status == "none" %}Nothing logged{% else %}Logged on {{ r.logged_days }} of {{ r.days }} days{% endif %}{% if r.status == "current" %} so far{% endif %} ·
+  {% if r.status == "current" %}counts in averages once it's over{% elif r.counted %}counts in averages{% else %}left out of averages{% endif %}{% if r.chosen is not none %} (your choice){% endif %}</span>
+  {% if r.status != "current" %}
+  {% if r.chosen is not none %}<button class="icon" name="counted" value="auto">back to automatic</button>
+  {% elif r.counted %}<button class="icon" name="counted" value="0" title="For a month you only partly logged">leave it out</button>
+  {% else %}<button class="icon" name="counted" value="1" title="For a month you really did spend this little">count it anyway</button>{% endif %}
+  {% endif %}
+</form>
+{% endmacro %}
+{% macro delete(table, id, what, view="", month="") %}
+<form method="post" action="/-/finance/delete" class="delete" data-confirm="Delete this {{ what }}?">
+  <input type="hidden" name="table" value="{{ table }}"><input type="hidden" name="id" value="{{ id }}">
+  <input type="hidden" name="view" value="{{ view }}"><input type="hidden" name="month" value="{{ month }}">
+  <button class="icon danger" title="Delete this {{ what }}">delete</button>
+</form>
+{% endmacro %}
+<div class="page-head">
+  <h1>Finance</h1>
+  <nav class="tabs" aria-label="Finance">
+    <div class="tab-group">
+      <a href="?view=log"{% if view == "log" %} aria-current="page"{% endif %}>Log</a>
+      <a href="?view=budget"{% if view == "budget" %} aria-current="page"{% endif %}>Budget</a>
+      <a href="?view=savings"{% if view == "savings" %} aria-current="page"{% endif %}>Savings</a>
+      <a href="?view=investments"{% if view == "investments" %} aria-current="page"{% endif %}>Investments</a>
+      <a href="?view=stats"{% if view == "stats" %} aria-current="page"{% endif %}>Stats</a>
+    </div>
+  </nav>
+  <p class="refresh-status muted small-print" data-refresh-status role="status"></p>
+</div>
+<datalist id="category-list">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</datalist>
+
+{% if view == "log" %}
+<div class="log-layout">
+  <div class="side-col">
+    <form class="panel log-form" method="post" action="/-/finance/expense" autocomplete="off">
+      <h2>Add an expense</h2>
+      <label>Amount (RM) <input type="number" name="amount" id="amount" min="0.01" step="0.01" inputmode="decimal" value="{{ prefill.amount }}" required autofocus></label>
+      <label>Category <input name="category" id="category" list="category-list" value="{{ prefill.category }}" required></label>
+      {% if categories %}<div class="chips pick-chips">{% for c in categories[:8] %}<button type="button" class="chip" data-category="{{ c }}">{{ c }}</button>{% endfor %}</div>{% endif %}
+      <label>Notes <input name="notes" value="{{ prefill.notes }}" placeholder="what it was"></label>
+      <label>Date <input type="date" name="date" value="{{ day }}" required></label>
+      <button class="btn primary">Add expense</button>
+    </form>
+
+    <section class="panel month-card">
+      <header class="card-head">
+        <h2>{{ month.month|month_name }}</h2>
+        <a class="icon" href="?view=budget&amp;month={{ month.month }}">budget</a>
+      </header>
+      <div class="big-money">{{ month.spent|money }}{% if month.budget is not none %} <small>of {{ month.budget|money }}</small>{% endif %}</div>
+      {% if month.budget is not none %}
+      <div class="{{ 'over' if month.over }}">{{ bar(month) }}</div>
+      <p class="muted">{{ left_text(month) }}{% if month.per_day %} · {{ month.per_day|money }} a day for the {{ month.days_left }} day{{ "s" if month.days_left != 1 }} to go{% endif %}</p>
+      {% else %}<p class="muted">No monthly budget yet. <a href="?view=budget">Set one</a>.</p>{% endif %}
+    </section>
+  </div>
+
+  <section class="panel day">
+    <header class="day-head">
+      <a class="btn small ghost{% if not prev_day %} disabled{% endif %}" {% if prev_day %}href="?date={{ prev_day }}"{% endif %} title="Previous day with expenses">‹</a>
+      <h2>{{ day|nice_date(true) }} <span class="muted">{{ day|days_ago }}</span></h2>
+      <a class="btn small ghost{% if not next_day %} disabled{% endif %}" {% if next_day %}href="?date={{ next_day }}"{% endif %} title="Next day with expenses">›</a>
+      <span class="spacer"></span>
+      {% if day != today %}<a class="btn small" href="?date={{ today }}">Today</a>{% endif %}
+    </header>
+    <p class="muted">{{ day_spent|money }} spent{% if expenses %} · {{ expenses|length }} expense{{ "s" if expenses|length != 1 }}{% endif %}</p>
+    {% if daily %}
+    <div class="daily-budget{{ ' over' if daily_total.over }}">
+      <div class="card-head">
+        <h3>Daily budget</h3>
+        <span class="muted">{{ left_text(daily_total) }} of {{ daily_total.budget|money }}</span>
+      </div>
+      <ul class="budget-rows">
+        {% for d in daily %}
+        <li{% if d.over %} class="over"{% endif %}><span class="b-cat">{{ d.category }}</span>{{ bar(d) }}
+          <span class="b-val">{{ d.spent|money }} <span class="muted">/ {{ d.budget|money }}</span></span></li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+    {% if expenses %}
+    <ol class="expense-list">
+      {% for e in expenses %}
+      <li>
+        <span class="chip">{{ e.category }}</span>
+        <span class="e-notes">{{ e.notes }}</span>
+        <span class="spacer"></span>
+        <span class="e-amount">{{ e.amount|money }}</span>
+        <a class="icon" href="/finance/expenses/{{ e.id }}" title="Edit this expense">edit</a>
+        {{ delete("expenses", e.id, "expense") }}
+      </li>
+      {% endfor %}
+    </ol>
+    {% else %}
+    <p class="empty">Nothing spent on this day. Add an expense on the left.</p>
+    {% endif %}
+  </section>
+</div>
+
+{% elif view == "budget" %}
+<div class="month-nav">
+  <a class="btn small ghost{% if not prev_month %} disabled{% endif %}" {% if prev_month %}href="?view=budget&amp;month={{ prev_month }}"{% endif %} title="Previous month">‹</a>
+  <h2>{{ month|month_name }}</h2>
+  <a class="btn small ghost{% if not next_month %} disabled{% endif %}" {% if next_month %}href="?view=budget&amp;month={{ next_month }}"{% endif %} title="Next month">›</a>
+  {% if record %}{{ month_status(record, "budget") }}{% endif %}
+  <span class="spacer"></span>
+  {% if month != today[:7] %}<a class="btn small" href="?view=budget">This month</a>{% endif %}
+</div>
+
+{% if record and record.status == "none" %}<p class="hint">Nothing was logged in {{ month|month_name }}, so these numbers only say what was recorded: RM0. The month is left out of averages.</p>
+{% elif record and record.status == "partial" %}<p class="hint">Only {{ record.logged_days }} of {{ record.days }} days were logged in {{ month|month_name }}, so you probably spent more than this.</p>{% endif %}
+<div class="tiles stats-tiles">
+  <div class="tile"><span class="tile-label">Spent</span><span class="tile-value money">{{ summary.spent|money }}</span></div>
+  <div class="tile"><span class="tile-label">Budget</span><span class="tile-value money">{{ summary.budget|money }}</span></div>
+  {% if summary.budget is not none and not (record and record.status == "none") %}
+  <div class="tile{{ ' over' if summary.over }}"><span class="tile-label">{{ "Over budget" if summary.over else "Left" }}</span><span class="tile-value money">{{ summary.left|abs|money }}</span></div>
+  {% endif %}
+  {% if summary.per_day %}
+  <div class="tile"><span class="tile-label">A day, {{ summary.days_left }} day{{ "s" if summary.days_left != 1 }} to go</span><span class="tile-value money">{{ summary.per_day|money }}</span></div>
+  {% endif %}
+</div>
+
+<div class="budget-layout">
+  <div class="main-col">
+  <section class="panel">
+    <h2>By category</h2>
+    {% if by_category %}
+    <div class="table-scroll">
+    <table class="budget-table">
+      <thead><tr><th>Category</th><th class="meter-col"><span class="visually-hidden">Spent of budget</span></th><th class="n">Spent</th><th class="n">Budget</th><th class="n">Left</th></tr></thead>
+      <tbody>
+      {% for c in by_category %}
+        <tr{% if c.over %} class="over"{% endif %}>
+          <td>{{ c.category }}</td>
+          <td class="meter-col">{% if c.budget is not none %}{{ bar(c) }}{% else %}<span class="muted">not in budget</span>{% endif %}</td>
+          <td class="n">{{ c.spent|money }}</td><td class="n">{{ c.budget|money }}</td>
+          <td class="n">{% if c.left is not none %}{{ left_text(c) }}{% else %}-{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr{% if summary.over %} class="over"{% endif %}><td>Total</td><td class="meter-col">{% if summary.budget is not none %}{{ bar(summary) }}{% endif %}</td>
+          <td class="n">{{ summary.spent|money }}</td><td class="n">{{ summary.budget|money }}</td>
+          <td class="n">{% if summary.left is not none %}{{ left_text(summary) }}{% else %}-{% endif %}</td></tr>
+      </tfoot>
+    </table>
+    </div>
+    {% else %}<p class="empty">No budget yet, and nothing spent this month. Set a budget below.</p>{% endif %}
+  </section>
+
+  <form class="panel budget-editor" method="post" action="/-/finance/budget" autocomplete="off">
+    <h2>Your budget</h2>
+    <p class="muted small-print">The <b>daily</b> budget is what you plan to spend each day in those categories; the Log tab shows how much of it is left that day. The <b>monthly</b> budget covers the whole month. Empty rows are ignored.</p>
+    <input type="hidden" name="month" value="{{ month }}">
+    <div class="budget-editor-cols">
+      {% for period, prefix, label in [("daily", "d", "Every day"), ("monthly", "m", "Every month")] %}
+      <div class="budget-edit">
+        <h3>{{ label }} <span class="muted" data-total>{{ lines[period]|sum(attribute="amount")|money }}</span></h3>
+        <table class="plan-rows">
+          <thead><tr><th>Category</th><th>Amount (RM)</th><th></th></tr></thead>
+          <tbody>
+          {% for l in lines[period] + [none] %}
+            <tr>
+              <td><input name="{{ prefix }}_category" list="category-list" value="{{ l.category if l else '' }}" aria-label="Category"></td>
+              <td><input name="{{ prefix }}_amount" type="number" min="0" step="0.01" value="{{ l.amount|plain if l else '' }}" class="narrow" aria-label="Amount in RM"></td>
+              <td class="row-tools"><button type="button" class="icon danger" data-remove title="Remove this line">remove</button></td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+        <button type="button" class="btn small" data-add-row>+ Add a line</button>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="actions">
+      <span class="spacer"></span>
+      <button class="btn primary">Save budget</button>
+    </div>
+  </form>
+  </div>
+
+  <section class="panel">
+    <h2>Expenses <span class="muted">{{ summary.expenses }}</span></h2>
+    {% if days %}
+    <table class="expense-table">
+      {% for d in days %}
+      <tbody>
+        <tr class="day-row"><th colspan="2"><a href="?date={{ d.date }}">{{ d.date|nice_date }}</a></th><th class="n">{{ d.total|money }}</th><th></th></tr>
+        {% for e in d.expenses %}
+        <tr><td>{{ e.category }}</td><td class="muted">{{ e.notes }}</td><td class="n">{{ e.amount|money }}</td>
+          <td class="row-tools"><a class="icon" href="/finance/expenses/{{ e.id }}" title="Edit this expense">edit</a>{{ delete("expenses", e.id, "expense", "budget", month) }}</td></tr>
+        {% endfor %}
+      </tbody>
+      {% endfor %}
+    </table>
+    {% else %}<p class="empty">No expenses in {{ month|month_name }}.</p>{% endif %}
+  </section>
+</div>
+
+
+{% elif view == "savings" %}
+<div class="tiles stats-tiles">
+  <div class="tile">
+    <span class="tile-label">Combined</span>
+    <span class="tile-value money">{{ total|money }}</span>
+    {% if change %}<span class="tile-note">{{ "+" if change[0] >= 0 else "-" }}{{ change[0]|abs|money }} since {{ change[1]|month_name }}</span>{% endif %}
+  </div>
+  {% for b in latest %}
+  <div class="tile">
+    <span class="tile-label"><i class="swatch" style="background:var(--series-{{ b.series }})"></i>{{ b.account }}</span>
+    <span class="tile-value money">{{ b.balance|money }}</span>
+    <span class="tile-note">{{ b.as_of|nice_date }}</span>
+  </div>
+  {% endfor %}
+  {% if now.holding %}
+  <a class="tile" href="?view=investments">
+    <span class="tile-label"><i class="swatch" style="background:var(--series-{{ names|length }})"></i>Investments</span>
+    <span class="tile-value money">{{ now.worth|money if now.complete else "-" }}</span>
+    <span class="tile-note">at the latest prices</span>
+  </a>
+  {% endif %}
+</div>
+
+<div class="log-layout">
+  <div class="side-col">
+    <form class="panel log-form" method="post" action="/-/finance/balances" autocomplete="off">
+      <h2>Month-end balances</h2>
+      <p class="muted small-print">Once a month, as it ends: what's in each account. Change what moved and save; the ones that didn't move are saved too, so the month counts as recorded. Shares aren't an account here: their value comes from your trades and their prices.</p>
+      <label>Date <input type="date" name="date" value="{{ checkin_date }}" required></label>
+      {% for b in latest %}
+      <label>{{ b.account }}
+        <input type="hidden" name="account" value="{{ b.account }}">
+        <input type="number" name="balance" step="0.01" inputmode="decimal" value="{{ b.balance|plain }}" aria-label="{{ b.account }} balance in RM">
+      </label>
+      {% endfor %}
+      <div class="row">
+        <label>New account <input name="account" list="account-list" placeholder="Savings account"></label>
+        <label>Balance (RM) <input type="number" name="balance" step="0.01" inputmode="decimal"></label>
+      </div>
+      <button class="btn primary">Save balances</button>
+      <datalist id="account-list">{% for a in accounts %}<option>{{ a }}</option>{% endfor %}</datalist>
+    </form>
+
+  </div>
+
+  <div class="main-col">
+    <section class="panel">
+      <h2>Savings at the end of each month</h2>
+      {% if months %}
+      {{ balance_chart }}
+      <p class="muted small-print">A month without an entry for an account keeps that account's last balance, hatched, so a month you didn't record never drops to zero. Investments are what the shares were worth at that month's last closing price and exchange rate.</p>
+      <details class="table-view"><summary>Table</summary>
+        <table><thead><tr><th>End of</th>{% for n in names %}<th class="n">{{ n }}</th>{% endfor %}<th class="n">Combined</th></tr></thead>
+        <tbody>{% for m in months|reverse %}<tr><td>{{ m.month|month_name }}</td>{% for v in m["values"] %}<td class="n">{% if v is not none %}{{ v|money }}{% if not m.recorded[loop.index0] %}<span class="muted">*</span>{% endif %}{% endif %}</td>{% endfor %}<td class="n">{{ m.total|money }}</td></tr>{% endfor %}</tbody></table>
+        <p class="muted small-print">* carried over from an earlier month</p>
+      </details>
+      {% else %}<p class="empty">No balances yet. Add them on the left.</p>{% endif %}
+    </section>
+
+  </div>
+</div>
+
+{% elif view == "investments" %}
+{% include "app_finance_live.html" %}
+
+<section class="panel connections">
+  <details class="table-view"{% if not (ibkr.token and ibkr.query) %} open{% endif %}><summary>Connections</summary>
+    <form class="form-grid ibkr-form" method="post" action="/-/finance/ibkr" autocomplete="off">
+      <label>IBKR Flex token <input type="password" name="token" placeholder="{{ 'saved; paste a new one to change it' if ibkr.token else 'from Flex Web Service Configuration' }}"></label>
+      <label>Query ID <input name="query" value="{{ ibkr.query }}" inputmode="numeric" placeholder="the number next to the query"></label>
+      <label class="wide">Wise API token <input type="password" name="wise_token" placeholder="{{ 'saved; paste a new one to change it' if wise.token else 'read-only, from Wise → Settings → API tokens' }}"></label>
+      <div class="wide actions"><button class="btn small primary">Save</button></div>
+    </form>
+    <p class="muted small-print">IBKR: an Activity Flex Query (Trades, Cash Transactions, Open Positions, Cash Report; XML, dates as yyyyMMdd) and a Flex Web Service token, both from Performance &amp; Reports → Flex Queries. Wise: a read-only personal API token. Both tokens only read, and stay in finance.db on this computer.</p>
+    <p class="muted small-print">Each time you open Finance (unless it already did in the last 5 minutes) the app fetches prices from Yahoo Finance, IBKR's statement and Wise's statements, and nothing in between. It adds new trades, deposits and transfers, corrects any the app has that IBKR or Wise says differently, and adds the day's prices. It never deletes anything, and doesn't keep the statements themselves, only the trades, deposits, transfers and prices from them.</p>
+  </details>
+</section>
+
+{% else %}
+<div class="month-nav">
+  <form method="get" class="inline-form">
+    <input type="hidden" name="view" value="stats">
+    <select name="month" aria-label="Period" onchange="this.form.submit()">
+      {% for m in month_options %}<option value="{{ m }}"{% if m == pick %} selected{% endif %}>{{ m|month_name }}</option>{% endfor %}
+      <option value="all"{% if pick == "all" %} selected{% endif %}>All time</option>
+    </select>
+  </form>
+  {% if record is defined %}{{ month_status(record, "stats") }}{% endif %}
+</div>
+
+<div class="tiles stats-tiles">
+  <div class="tile"><span class="tile-label">Spent</span><span class="tile-value money">{{ spent|money }}</span>
+    {% if record is defined %}<span class="tile-note">{{ record.expenses }} expenses</span>{% endif %}</div>
+  {% if pick == "all" %}
+  <div class="tile"><span class="tile-label">Average month</span><span class="tile-value money">{{ average_month|money }}</span>
+    <span class="tile-note">over {{ counted|length }} fully logged month{{ "s" if counted|length != 1 }}</span></div>
+  <div class="tile"><span class="tile-label">Average day</span><span class="tile-value money">{{ average_day|money }}</span>
+    <span class="tile-note">in those months</span></div>
+  {% else %}
+  {% if left is not none %}<div class="tile{{ ' over' if left < 0 }}"><span class="tile-label">{{ "Over budget" if left < 0 else "Left of budget" }}</span><span class="tile-value money">{{ left|abs|money }}</span>
+    <span class="tile-note">of {{ budget|money }}</span></div>{% endif %}
+  <div class="tile"><span class="tile-label">Average day</span><span class="tile-value money">{{ average_day|money }}</span>
+    <span class="tile-note">over {{ day_count }} days, {{ record.logged_days }} with spending</span></div>
+  {% if ahead %}<div class="tile{{ ' over' if budget is not none and ahead > budget }}"><span class="tile-label">On pace for</span><span class="tile-value money">{{ ahead|money }}</span>
+    <span class="tile-note">by the end of the month</span></div>{% endif %}
+  {% endif %}
+  {% if by_category %}<div class="tile"><span class="tile-label">Most on</span><span class="tile-value money">{{ by_category[0].category }}</span><span class="tile-note">{{ by_category[0].spent|money }}, {{ (100 * by_category[0].spent / spent)|round|int }}% of it</span></div>{% endif %}
+</div>
+
+<div class="charts">
+  {% if pick != "all" %}
+  <section class="panel wide">
+    <header class="chart-head">
+      <h2>Spent per day <span class="muted">{{ daily_picked|join(", ") if daily_picked else "everything" }}</span></h2>
+      <details class="pick-categories">
+        <summary class="btn small ghost">Categories</summary>
+        <form class="pick-form" method="post" action="/-/finance/daily-categories">
+          <input type="hidden" name="month" value="{{ pick }}">
+          <p class="muted small-print">The categories this chart adds up.{% if not daily_chosen %} Now: the daily budget's.{% endif %}</p>
+          <div class="pick-list">
+          {% for c in categories %}<label class="check"><input type="checkbox" name="category" value="{{ c }}"{% if c.lower() in daily_picked_lower %} checked{% endif %}> {{ c }}</label>{% endfor %}
+          </div>
+          <div class="actions">
+            <button class="btn small primary">Show these</button>
+            {% if daily_chosen %}<button class="btn small ghost" name="reset" value="1">Use the daily budget's</button>{% endif %}
+          </div>
+        </form>
+      </details>
+    </header>
+    {{ daily_chart }}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Day</th>{% for c in daily_picked %}<th class="n">{{ c }}</th>{% endfor %}<th class="n">Total</th></tr></thead>
+      <tbody>{% for d, total, cats in daily|reverse %}<tr><td>{{ d|nice_date }}</td>{% for c in daily_picked %}<td class="n">{{ (cats[c] or 0)|money }}</td>{% endfor %}<td class="n">{{ total|money }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <h2>{{ "Where it went" if pick == "all" else "Spent against the budget" }}</h2>
+    {% if by_category %}{{ category_chart }}
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Category</th><th class="n">Expenses</th><th class="n">Spent</th>{% if pick != "all" %}<th class="n">Budget</th>{% endif %}<th class="n">Share</th></tr></thead>
+      <tbody>
+      {% if pick == "all" %}{% for r in by_category %}<tr><td>{{ r.category }}</td><td class="n">{{ r.expenses }}</td><td class="n">{{ r.spent|money }}</td><td class="n">{{ (100 * r.spent / spent)|round(1) }}%</td></tr>{% endfor %}
+      {% else %}{% for c in compared %}<tr><td>{{ c.category }}</td><td class="n">{{ (by_category|selectattr("category", "equalto", c.category)|map(attribute="expenses")|first) or 0 }}</td><td class="n">{{ c.spent|money }}</td><td class="n">{{ c.budget|money }}</td><td class="n">{{ (100 * c.spent / spent)|round(1) }}%</td></tr>{% endfor %}{% endif %}
+      </tbody></table>
+    </details>
+    {% else %}<p class="empty">Nothing spent.</p>{% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>Biggest expenses</h2>
+    {% if biggest %}
+    <table>
+      <thead><tr><th>Date</th><th>Category</th><th>Notes</th><th class="n">Amount</th></tr></thead>
+      <tbody>{% for e in biggest %}<tr><td><a href="?date={{ e.date }}">{{ e.date|nice_date }}</a></td><td>{{ e.category }}</td><td class="muted">{{ e.notes }}</td><td class="n">{{ e.amount|money }}</td></tr>{% endfor %}</tbody>
+    </table>
+    {% else %}<p class="empty">Nothing spent.</p>{% endif %}
+  </section>
+
+  <section class="panel wide">
+    <h2>Spent per month <span class="muted">{{ year }}</span></h2>
+    {% if records %}{{ monthly_chart }}
+    <p class="muted small-print">A month counts in the averages once you logged expenses on at least half its days, so a month you forgot to log doesn't drag them down. Faded columns are partly logged months; months with nothing logged have no column. You can choose for any month on the Budget tab.</p>
+    <details class="table-view"><summary>Table</summary>
+      <table><thead><tr><th>Month</th><th class="n">Spent</th><th class="n">Days logged</th><th>In averages</th></tr></thead>
+      <tbody>{% for r in records|reverse if r.status != "future" %}<tr><td><a href="?view=budget&amp;month={{ r.month }}">{{ r.month|month_name }}</a></td><td class="n">{{ r.spent|money }}</td><td class="n">{{ r.logged_days }} of {{ r.days }}</td><td>{{ "this month" if r.status == "current" else "yes" if r.counted else "no" }}</td></tr>{% endfor %}</tbody></table>
+    </details>
+    {% else %}<p class="empty">Nothing spent yet.</p>{% endif %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

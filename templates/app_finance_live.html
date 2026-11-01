@@ -1,0 +1,111 @@
+{# The Investments tab, all of it read-only: trades and deposits come from IBKR, what the
+   deposits cost from Wise, prices from Yahoo Finance; problems with those show at the
+   top. When the Finance page opens it asks for the latest of those (POST
+   /-/finance/refresh), then fetches this again from /-/finance/investments/live and
+   swaps it in. #}
+<div class="live" id="investments-live" data-refresh="/-/finance/investments/live?ticker={{ (ticker or '')|urlencode }}&amp;range={{ range }}">
+{% if ibkr.error %}<p class="flash error">IBKR didn't work last time: {{ ibkr.error }}</p>{% endif %}
+{% if wise.error %}<p class="flash error">Wise didn't work last time: {{ wise.error }}</p>{% endif %}
+{% for d in ibkr.waiting %}<p class="flash error">{{ d.amount|amount(d.currency) }} arrived at IBKR on {{ d.date|nice_date(true) }}, but no Wise payment matches it yet, so it counts at that day's market rate, without a fee.</p>{% endfor %}
+{% if now.positions %}
+<div class="tiles stats-tiles invest-tiles">
+  <div class="tile">
+    <span class="tile-label">You have</span>
+    <span class="tile-value money">{% for cur, v in now.worth_by_currency.items() %}{{ v|amount(cur) }}{% if not loop.last %} + {% endif %}{% endfor %}</span>
+    <span class="tile-note">= {{ now.worth|money if now.complete else "-" }}{% for cur, (fx, on) in now.rates.items() %}{% if fx %} at {{ "%.4f"|format(fx) }} ringgit per {{ cur }}{% endif %}{% endfor %}</span>
+  </div>
+  <div class="tile">
+    <span class="tile-label">Put in</span>
+    <span class="tile-value money">{{ now.put_in|money if now.complete else "-" }}</span>
+    <span class="tile-note">everything that left your account for it, fees included</span>
+  </div>
+  {% if now.complete and now.gain_pct is not none %}
+  <div class="tile">
+    <span class="tile-label">Return now</span>
+    <span class="tile-value money {{ 'down' if now.gain < 0 else 'up' }}">{{ "%+.2f"|format(100 * now.gain_pct) }}%</span>
+    <span class="tile-note">{{ "+" if now.gain >= 0 else "-" }}{{ now.gain|abs|money }} in ringgit, after every fee{% if market_gain_pct is not none %}. The shares alone: {{ "%+.2f"|format(100 * market_gain_pct) }}% in {{ currency }}{% endif %}</span>
+  </div>
+  {% endif %}
+  <div class="tile">
+    <span class="tile-label">A year at this pace</span>
+    <span class="tile-value money {{ 'down' if yearly is not none and yearly < 0 else 'up' if yearly is not none }}">{{ ("%+.1f"|format(100 * yearly)) ~ "%" if yearly is not none else "-" }}</span>
+    <span class="tile-note">your return so far as a yearly rate{% if since %}, since {{ since|nice_date(true) }}{% endif %}{% if market_year_pct is not none %}. {{ ticker }} over the past 12 months: {{ "%+.1f"|format(100 * market_year_pct) }}%{% endif %}</span>
+  </div>
+  <div class="tile">
+    <span class="tile-label">Fees and costs</span>
+    <span class="tile-value money">{{ now.costs.total|money }}</span>
+    <span class="tile-note">{% if now.put_in %}{{ "%.2f"|format(100 * now.costs.total / now.put_in) }}% of what you put in{% endif %}</span>
+  </div>
+</div>
+{% endif %}
+
+{% if ticker %}
+<section class="panel price-panel">
+  <header class="price-head">
+    <div class="price-title">
+      <h2>{{ ticker }}{% if latest %} <span class="price-now">{{ latest|amount(currency) }}</span>{% if day_change is not none %} <span class="{{ 'down' if day_change < 0 else 'up' }}">{{ "%+.2f"|format(100 * day_change) }}%</span>{% endif %}{% endif %}</h2>
+      <p class="muted small-print">{{ chart_note }}. Prices from Yahoo Finance as {{ symbol }} (up to 15 minutes late), fetched when you open Finance{% if intraday_time %}; latest {{ intraday_time[:10]|nice_date }} {{ intraday_time[11:] }}{% endif %}.</p>
+    </div>
+    <span class="spacer"></span>
+    {% if held|length > 1 %}
+    <nav class="tab-group" aria-label="Ticker">{% for tk in held %}<a href="?view=investments&amp;ticker={{ tk|urlencode }}&amp;range={{ range }}"{% if tk == ticker %} aria-current="page"{% endif %}>{{ tk }}</a>{% endfor %}</nav>
+    {% endif %}
+    <nav class="tab-group" aria-label="Time range">
+      {% for key, label in ranges.items() %}<a href="?view=investments&amp;ticker={{ ticker|urlencode }}&amp;range={{ key }}"{% if key == range %} aria-current="page"{% endif %} title="{{ label }}">{{ key|upper if key != "all" else "All" }}</a>{% endfor %}
+    </nav>
+  </header>
+  {{ price_chart }}
+</section>
+{% else %}
+<section class="panel"><p class="empty">No shares yet. Connect IBKR below and your trades come in from its statement.</p></section>
+{% endif %}
+
+<div class="charts">
+  <section class="panel">
+    <h2>What you have</h2>
+    {% if now.positions %}
+    <div class="table-scroll">
+    <table class="holdings">
+      <thead><tr><th>Ticker</th><th class="n">Shares</th><th class="n">Average cost</th><th class="n">Price</th><th class="n">Worth</th><th class="n">In ringgit</th><th class="n">Gain</th></tr></thead>
+      <tbody>
+      {% for h in now.positions %}
+        <tr>
+          <td>{{ h.ticker }}</td>
+          <td class="n">{{ h.shares|plain }}</td>
+          <td class="n">{{ h.average|amount(h.currency) }}</td>
+          <td class="n">{{ h.price|amount(h.currency) }} <span class="muted">{{ h.price_date|short_date }}</span></td>
+          <td class="n">{{ h.value|amount(h.currency) }}</td>
+          <td class="n">{{ h.value_myr|money }}</td>
+          <td class="n">
+            <span class="{{ 'over-text' if h.gain < 0 }}">{{ "+" if h.gain >= 0 }}{{ h.gain|amount(h.currency) }}</span>{% if h.gain_pct is not none %} <span class="muted">{{ "%+.2f"|format(100 * h.gain_pct) }}%</span>{% endif %}
+            {% if h.gain_myr is not none %}<br><span class="{{ 'over-text' if h.gain_myr < 0 }}">{{ "+" if h.gain_myr >= 0 }}{{ h.gain_myr|money }}</span>{% endif %}
+            {% if h.realized %}<br><span class="muted">{{ "+" if h.realized >= 0 }}{{ h.realized|amount(h.currency) }} on what you sold</span>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      {% for currency, left in now.cash.items() %}
+        <tr><td>Cash</td><td></td><td></td><td></td><td class="n">{{ left|amount(currency) }}</td><td class="n">{{ (left * now.rates[currency][0])|money if now.rates[currency][0] else "-" }}</td><td></td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted small-print">Average cost includes commission. The gain per ticker is shown in its own currency (how the shares did) and in ringgit (what they cost you in ringgit, conversion included, against what they're worth now).</p>
+    {% else %}<p class="empty">No shares yet.</p>{% endif %}
+  </section>
+
+  {% if now.positions %}
+  {% set c = now.costs %}
+  <section class="panel">
+    <h2>Fees and costs</h2>
+    <table class="costs">
+      <tbody>
+        <tr><td>Broker commission</td><td class="muted">{{ now.positions|sum(attribute="commission")|amount(now.positions[0].currency) }} on {{ shares.trades|length }} trade{{ "s" if shares.trades|length != 1 }}, in the ringgit those dollars cost</td><td class="n">{{ c.commission|money }}</td></tr>
+        <tr><td>Conversion fees</td><td class="muted">{% if shares.conversions %}Wise's fees on your {{ shares.conversions|length }} transfers{% elif shares.fee_categories %}logged as {{ shares.fee_categories|join(", ") }} expenses{% else %}none known yet{% endif %}</td><td class="n">{{ (c.conversion_fees + c.fee_expenses)|money }}</td></tr>
+        <tr><td>Exchange rate</td><td class="muted">{% if c.spread_known %}Wise's rate against the market's closing rate that day, fees aside{% else %}known once the transfers are{% endif %}</td><td class="n">{{ c.spread|money if c.spread_known else "-" }}</td></tr>
+      </tbody>
+      <tfoot><tr><td>All fees and costs</td><td class="muted">{% if now.put_in %}{{ "%.2f"|format(100 * c.total / now.put_in) }}% of what you put in{% endif %}</td><td class="n">{{ c.total|money }}</td></tr></tfoot>
+    </table>
+  </section>
+  {% endif %}
+</div>
+</div>

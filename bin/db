@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-"""db: my SQLite databases (Chinese vocabulary + workouts), browsed with Datasette.
+"""db: my SQLite databases (Chinese vocabulary, workouts, finance, quotes, knowledge bits),
+browsed with Datasette.
 
 Usage:
   db [open]        sync, back up once a day, start Datasette and open it in the browser
   db restart       stop and start Datasette again, without opening the browser
   db stop          stop Datasette
   db sync          move learnt words you haven't studied for N days to "to revise"
-  db import FILE   add Chinese words from a CSV (words already in the database are skipped)
-  db backup        copy both databases into backups/ now
-  db status        is Datasette running, and how many words are in each list
+  db import FILE   add Chinese words from a CSV, or finance data: a Google Forms
+                   responses CSV (expenses, savings, shares) or a budget TSV.
+                   Rows already in the database are skipped.
+  db backup        copy the databases into backups/ now
+  db status        is Datasette running, and a line about each database
 
 Everything lives in this repo's folder (the one above bin/); DB_DIR overrides it.
 """
@@ -22,11 +25,12 @@ import subprocess
 import sys
 import time
 import urllib.request
-from datetime import date
+from collections import Counter
+from datetime import date, datetime
 from pathlib import Path
 
 DB_DIR = Path(os.environ.get("DB_DIR", Path(__file__).resolve().parent.parent))
-DATABASES = ("chinese", "workouts")
+DATABASES = ("chinese", "workouts", "finance", "quotes", "knowledge")
 STATE_DIR = Path.home() / ".local/state/db"
 PID_FILE = STATE_DIR / "datasette.pid"
 LOG_FILE = STATE_DIR / "datasette.log"
@@ -200,6 +204,126 @@ def import_words(path):
     conn.close()
 
 
+def import_file(path):
+    """Chinese words, or finance data if the file looks like the finance sheets."""
+    path = Path(path).expanduser()
+    if not path.is_file():
+        die(f"no such file: {path}")
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        head = f.read(4096)
+    if "\t" in head and "Daily" in head and "Monthly" in head:
+        import_budget(path)
+    elif "Transaction Type" in head.partition("\n")[0]:
+        import_finance(path)
+    else:
+        import_words(path)
+
+
+def money(text):
+    """'RM1,200.00', '5.9' or '' -> 1200.0, 5.9 or None"""
+    text = text.strip().upper().removeprefix("RM").replace(",", "").strip()
+    return round(float(text), 2) if text else None
+
+
+def form_date(text):
+    """A Google Forms timestamp ('30/08/2026 20:20:36' or '29/08/2026') -> '2026-08-30'"""
+    return datetime.strptime(text.split()[0], "%d/%m/%Y").date().isoformat()
+
+
+FINANCE_COLUMNS = {
+    "expenses": ("date", "category", "amount", "notes"),
+    "balances": ("date", "account", "balance", "notes"),
+    "trades": ("date", "ticker", "side", "shares", "price", "commission", "notes"),
+}
+
+
+def import_finance(path):
+    """A Google Forms responses CSV. Expenses rows become expenses; Savings rows become
+    account balances, or share purchases (trades) when the account type is Investment."""
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        found = list(csv.DictReader(f))
+    new = {table: [] for table in FINANCE_COLUMNS}
+    problems = []
+    # The export lists the newest first; add the oldest first so ids follow the order you logged them
+    for n, r in reversed(list(enumerate(found, start=1))):
+        col = lambda name: (r.get(name) or "").strip()
+        kind, account, notes = col("Transaction Type").lower(), col("Account Type"), col("Notes")
+        try:
+            day = form_date(col("Timestamp"))
+            if kind == "expenses":
+                amount = money(col("Amount (MYR)"))
+                if not amount or amount < 0:
+                    raise ValueError("no amount")
+                new["expenses"].append((day, col("Category") or "Other", amount, notes))
+            elif kind == "savings" and account.lower() == "investment":
+                new["trades"].append((day, col("Ticker"), "buy", float(col("Number of Shares")),
+                                           float(col("Price per Share (USD)")), float(col("Commission (USD)") or 0), notes))
+            elif kind == "savings":
+                amount = money(col("Amount (MYR)"))
+                if amount is None:
+                    raise ValueError("no amount")
+                new["balances"].append((day, account or "Savings", amount, notes))
+            else:
+                raise ValueError(f"unknown transaction type {col('Transaction Type')!r}")
+        except ValueError as e:
+            problems.append(f"row {n}: {e}")
+    with connect("finance") as conn:
+        for table, cols in FINANCE_COLUMNS.items():
+            # Skip rows that are already there, counting repeats: two identical RM2 coffees on
+            # one day stay two, and importing the same export again adds nothing
+            key = lambda row: tuple(v.lower() if isinstance(v, str) else v for v in row)
+            have = Counter(key(r) for r in conn.execute(f"SELECT {', '.join(cols)} FROM {table}"))
+            added = 0
+            for row in sorted(new[table], key=lambda row: row[0]):
+                if have[key(row)]:
+                    have[key(row)] -= 1
+                    continue
+                conn.execute(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", row)
+                added += 1
+            print(f"{table.capitalize()}: added {added}, skipped {len(new[table]) - added} already in the database.")
+    conn.close()
+    if problems:
+        print(f"Not imported ({len(problems)}): " + "; ".join(problems))
+
+
+def import_budget(path):
+    """The Budget sheet saved as TSV: a header row with Daily, Amount, Monthly, Amount, then
+    one category per row under each, down to its Total row. It replaces the whole budget."""
+    with open(path, newline="", encoding="utf-8-sig") as f:
+        table = [[c.strip() for c in cells] for cells in csv.reader(f, delimiter="\t")]
+    header = next((i for i, cells in enumerate(table) if "Daily" in cells and "Monthly" in cells), None)
+    if header is None:
+        die(f"{path.name} has no header row with Daily and Monthly columns")
+    lines = []
+    for period in ("Daily", "Monthly"):
+        c = table[header].index(period)
+        for cells in table[header + 1:]:
+            name = cells[c] if c < len(cells) else ""
+            if name.lower() == "total":
+                break
+            if not name:
+                continue
+            try:
+                amount = money(cells[c + 1] if c + 1 < len(cells) else "")
+            except ValueError:
+                amount = None
+            if amount is None:
+                die(f"{period} budget: {name} has no amount")
+            lines.append((period.lower(), len(lines), name, amount))
+    if not lines:
+        die(f"{path.name} has no budget lines under Daily or Monthly")
+    with connect("finance") as conn:
+        conn.execute("DELETE FROM budget")
+        try:
+            conn.executemany("INSERT INTO budget (period, position, category, amount) VALUES (?, ?, ?, ?)", lines)
+        except sqlite3.IntegrityError as e:
+            die(f"can't import the budget ({e}); nothing was changed")
+        for period in ("daily", "monthly"):
+            n, total = conn.execute("SELECT count(*), coalesce(sum(amount), 0) FROM budget WHERE period = ?", [period]).fetchone()
+            print(f"{period.capitalize()} budget: {n} categories, RM{total:,.2f}")
+    conn.close()
+
+
 def status():
     print(f"Datasette: {'running at ' + URL if running() else 'not running'}")
     with connect("chinese") as conn:
@@ -209,6 +333,18 @@ def status():
         row = conn.execute("SELECT count(DISTINCT date) AS workouts, count(*) AS sets, max(date) AS last FROM sets").fetchone()
         print(f"Workouts: {row['workouts']} workouts, {row['sets']} sets, last on {row['last'] or '-'}")
     conn.close()
+    with connect("finance") as conn:
+        row = conn.execute("""SELECT coalesce(sum(CASE WHEN date >= date('now', 'localtime', 'start of month') THEN amount END), 0) AS month,
+                                     max(date) AS last FROM expenses""").fetchone()
+        budget = conn.execute("SELECT sum(amount) FROM budget WHERE period = 'monthly'").fetchone()[0]
+        print(f"Finance: RM{row['month']:,.2f} spent this month" + (f" of RM{budget:,.2f}" if budget else "")
+              + f", last expense on {row['last'] or '-'}")
+    conn.close()
+    for name, table, title in (("quotes", "quotes", "Quotes"), ("knowledge", "bits", "Knowledge")):
+        with connect(name) as conn:
+            n, tags = conn.execute(f"SELECT (SELECT count(*) FROM {table}), (SELECT count(*) FROM tags)").fetchone()
+            print(f"{title}: {n} {table}, {tags} tags")
+        conn.close()
 
 
 def main(args):
@@ -227,7 +363,7 @@ def main(args):
     elif cmd == "sync":
         sync()
     elif cmd == "import" and len(args) == 2:
-        import_words(args[1])
+        import_file(args[1])
     elif cmd == "backup":
         made = backup(force=True)
         print(f"Backed up into {DB_DIR / 'backups'}: {', '.join(made)}")
