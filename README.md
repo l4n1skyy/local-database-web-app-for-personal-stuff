@@ -68,6 +68,8 @@ Categories=Utility;
 
 If your launcher doesn't see `~/.local/bin`, put the full path to `bin/db` in `Exec=`.
 
+To have the app running whenever you're logged in (so a bookmark to `http://127.0.0.1:8001/` always works), run `db autostart` once. It writes and enables a systemd user service, `~/.config/systemd/user/db.service`; `db autostart off` removes it.
+
 ## The `db` command
 
 | Command | What it does |
@@ -79,8 +81,9 @@ If your launcher doesn't see `~/.local/bin`, put the full path to `bin/db` in `E
 | `db backup` | Copies the databases into `backups/` now |
 | `db restart` | Restarts the app without opening the browser (after changing `plugins/app.py`) |
 | `db stop` | Stops the app |
+| `db autostart` | Starts the app whenever you log in, from now on (`db autostart off` undoes it) |
 
-The app runs in the background. Its log is `~/.local/state/db/datasette.log`.
+The app runs in the background, as the `db.service` user service once you've run `db autostart`. Its log is `~/.local/state/db/datasette.log`.
 
 ## Using it
 
@@ -167,7 +170,7 @@ Two pages that work the same way: Quotes for quotes (the quote, who said it, whe
 - **+ Add** takes the text, the other fields and its tags. A quote has one tag: pick it, or type a new one under **Or a new tag** (that one wins). A bit can have any number: tick the tags you have, and type new ones under **New tags**, separated by commas. Tags are lower case (`#Self Control` becomes `self control`). **edit** on a card (it shows on hover) changes everything about it, its tags included, and has **Delete** at the bottom.
 - **Tags** lists every tag with how many notes it has. **Rename** renames it everywhere (renaming it to a tag that exists puts the two together), **delete** takes it off its notes (the notes stay), and **New tag** makes one before anything has it.
 
-The quotes started as the Quotes note in Obsidian: each quote became a row, its attribution was split into who said it and where it's from, and each got one general tag: life, motivation, wisdom, love, mindset, society, work or humour.
+The quotes started as the Quotes note in Obsidian: each quote became a row, its attribution was split into who said it and where it's from, and each got one general tag: life, productivity or society (one that fits none of them has no tag).
 
 ## Importing words
 

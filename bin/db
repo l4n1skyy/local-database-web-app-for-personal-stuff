@@ -12,6 +12,9 @@ Usage:
                    Rows already in the database are skipped.
   db backup        copy the databases into backups/ now
   db status        is Datasette running, and a line about each database
+  db autostart     start Datasette whenever you log in (a systemd user service)
+  db autostart off stop doing that
+  db serve         run Datasette in the foreground (what the service runs)
 
 Everything lives in this repo's folder (the one above bin/); DB_DIR overrides it.
 """
@@ -38,6 +41,26 @@ DATASETTE = Path(shutil.which("datasette") or Path.home() / ".local/bin/datasett
 PORT = 8001
 URL = f"http://127.0.0.1:{PORT}/"
 KEEP_BACKUPS = 14  # per database
+SERVICE = "db.service"
+UNIT_FILE = Path.home() / ".config/systemd/user" / SERVICE
+UNIT = """\
+[Unit]
+Description=Datasette for my databases (written by `db autostart`)
+# Give up after 5 failed starts in 5 minutes (e.g. the drive isn't mounted)
+StartLimitIntervalSec=5min
+StartLimitBurst=5
+
+[Service]
+Type=exec
+Environment="DB_DIR={dir}"
+ExecStart="{db}" serve
+# Not after a clean exit: `db stop` ends it with SIGTERM
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
+"""
 
 STATUSES = {"to learn": "to learn", "to revise": "to revise", "learnt": "learnt", "learned": "learnt"}
 # CSV header (lowercased, spaces -> _) -> words column
@@ -116,25 +139,42 @@ def running():
         return False
 
 
-def start():
+def systemctl(*args):
+    return subprocess.run(["systemctl", "--user", *args], check=False).returncode
+
+
+def datasette_command():
+    if not DATASETTE.exists():
+        die("Datasette isn't installed: uv tool install --prerelease=allow 'datasette==1.0a41'")
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    return [str(DATASETTE), "serve", str(DB_DIR), "--host", "127.0.0.1", "--port", str(PORT)]
+
+
+def prepare():
     for name in DATABASES:
         connect(name).close()
     sync(quiet=True)
     backup()
+
+
+def start():
+    prepare()
     if not running():
-        if not DATASETTE.exists():
-            die("Datasette isn't installed: uv tool install --prerelease=allow 'datasette==1.0a41'")
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        with open(LOG_FILE, "a") as log:
-            proc = subprocess.Popen(
-                [DATASETTE, "serve", DB_DIR, "--host", "127.0.0.1", "--port", str(PORT)],
-                stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True,
-            )
-        PID_FILE.write_text(str(proc.pid))
+        command = datasette_command()
+        if UNIT_FILE.exists():  # db autostart: let systemd run it
+            systemctl("start", SERVICE)
+            stopped = lambda: systemctl("-q", "is-active", SERVICE) != 0
+        else:
+            with open(LOG_FILE, "a") as log:
+                proc = subprocess.Popen(
+                    command, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True,
+                )
+            PID_FILE.write_text(str(proc.pid))
+            stopped = lambda: proc.poll() is not None
         for _ in range(100):
             if running():
                 break
-            if proc.poll() is not None:
+            if stopped():
                 die(f"Datasette stopped while starting:\n{LOG_FILE.read_text()[-2000:]}")
             time.sleep(0.2)
         else:
@@ -159,6 +199,44 @@ def stop():
     os.kill(pid, signal.SIGTERM)
     PID_FILE.unlink(missing_ok=True)
     print("Stopped Datasette.")
+
+
+def restart():
+    stop()
+    for _ in range(50):
+        if not running():
+            break
+        time.sleep(0.1)
+    start()
+
+
+def serve():
+    prepare()
+    command = datasette_command()
+    # Become Datasette, logging where `db open` logs; the pid stays the same, so `db stop` works too
+    sys.stdout.flush()
+    log = os.open(LOG_FILE, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+    os.dup2(log, 1)
+    os.dup2(log, 2)
+    PID_FILE.write_text(str(os.getpid()))
+    os.execv(command[0], command)
+
+
+def autostart(on):
+    if not on:
+        if UNIT_FILE.exists():
+            systemctl("-q", "disable", SERVICE)
+            UNIT_FILE.unlink()
+            systemctl("daemon-reload")
+        print("Datasette won't start when you log in any more (`db stop` stops it now).")
+        return
+    UNIT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    UNIT_FILE.write_text(UNIT.format(db=Path(__file__).resolve(), dir=DB_DIR))
+    systemctl("daemon-reload")
+    systemctl("-q", "enable", SERVICE)
+    if systemctl("-q", "is-active", SERVICE) != 0:
+        restart() if running() else start()  # hand a Datasette started by `db open` over to the service
+    print(f"Datasette now starts when you log in (systemctl --user status {SERVICE}).")
 
 
 def import_words(path):
@@ -354,12 +432,11 @@ def main(args):
     elif cmd == "stop":
         stop()
     elif cmd == "restart":
-        stop()
-        for _ in range(50):
-            if not running():
-                break
-            time.sleep(0.1)
-        start()
+        restart()
+    elif cmd == "serve":
+        serve()
+    elif cmd == "autostart" and args[1:] in ([], ["off"]):
+        autostart(on=not args[1:])
     elif cmd == "sync":
         sync()
     elif cmd == "import" and len(args) == 2:
